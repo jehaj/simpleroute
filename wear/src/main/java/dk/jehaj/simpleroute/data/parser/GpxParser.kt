@@ -15,6 +15,22 @@ class GpxParser {
     fun parse(inputStream: InputStream, fileName: String = "route.gpx"): Route {
         val factory = SAXParserFactory.newInstance().apply {
             isNamespaceAware = false
+            // Defend against XXE and XML entity expansion (Billion Laughs) attacks
+            runCatching {
+                setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+            }
+            runCatching {
+                setFeature("http://xml.org/sax/features/external-general-entities", false)
+            }
+            runCatching {
+                setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+            }
+            runCatching {
+                setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+            }
+            runCatching {
+                setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true)
+            }
         }
         val saxParser = factory.newSAXParser()
         val handler = GpxHandler(fileName)
@@ -82,7 +98,11 @@ class GpxParser {
 
         override fun characters(ch: CharArray?, start: Int, length: Int) {
             if (ch != null) {
-                textBuffer.append(ch, start, length)
+                val remaining = MAX_TEXT_LENGTH - textBuffer.length
+                if (remaining > 0) {
+                    val toAppend = kotlin.math.min(length, remaining)
+                    textBuffer.append(ch, start, toAppend)
+                }
             }
         }
 
@@ -241,4 +261,8 @@ class GpxParser {
         val lat: Double,
         val lon: Double
     )
+
+    companion object {
+        private const val MAX_TEXT_LENGTH = 16_384
+    }
 }

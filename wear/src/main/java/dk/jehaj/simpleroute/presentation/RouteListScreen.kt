@@ -60,6 +60,7 @@ fun RouteListScreen(
 
     val isServerRunning by webServer.isRunning.collectAsState()
     val serverUrl by webServer.serverUrl.collectAsState()
+    val currentPin by webServer.currentPin.collectAsState()
 
     fun refreshRoutes() {
         coroutineScope.launch {
@@ -236,14 +237,24 @@ fun RouteListScreen(
                         Text(
                             text = serverUrl ?: "http://...:8080",
                             color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Black
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    if (currentPin != null) {
+                        Text(
+                            text = "PIN: ${currentPin!!}",
+                            color = Color(0xFFFFD54F),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                     Row {
                         Button(
                             onClick = {
+                                webServer.stop()
                                 refreshRoutes()
                                 showWifiDialog = false
                             },

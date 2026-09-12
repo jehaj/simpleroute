@@ -62,13 +62,13 @@ class NavigationService : Service() {
         hapticManager = HapticManager(this)
         powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
 
-        // Acquire partial wake-lock for background tracking pipeline
+        // Acquire partial wake-lock for background tracking pipeline (capped to max 6 hours for safety)
         partialWakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
             "SimpleRoute:NavWakeLock"
         ).apply {
             setReferenceCounted(false)
-            acquire(24 * 60 * 60 * 1000L) // Safe max timeout
+            acquire(6 * 60 * 60 * 1000L) // 6-hour max timeout
         }
 
         createNotificationChannel()

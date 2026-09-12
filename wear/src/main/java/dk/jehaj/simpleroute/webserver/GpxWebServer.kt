@@ -17,15 +17,15 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
-import io.ktor.utils.io.core.readBytes
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import io.ktor.utils.io.jvm.javaio.toInputStream
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
 import java.net.Inet4Address
 import java.net.NetworkInterface
+import java.security.SecureRandom
+import java.util.Locale
 
 class GpxWebServer(
     private val context: Context,
@@ -40,6 +40,12 @@ class GpxWebServer(
     private val _serverUrl = MutableStateFlow<String?>(null)
     val serverUrl: StateFlow<String?> = _serverUrl.asStateFlow()
 
+    private val _currentPin = MutableStateFlow<String?>(null)
+    val currentPin: StateFlow<String?> = _currentPin.asStateFlow()
+
+    private var failedAttempts = 0
+    private var lockoutUntil = 0L
+
     fun getLocalIpAddress(): String? {
         try {
             // First attempt: check WifiManager ipAddress
@@ -47,6 +53,7 @@ class GpxWebServer(
             val ipInt = wifiManager?.connectionInfo?.ipAddress ?: 0
             if (ipInt != 0) {
                 val ipString = String.format(
+                    Locale.US,
                     "%d.%d.%d.%d",
                     ipInt and 0xff,
                     (ipInt shr 8) and 0xff,
@@ -83,6 +90,12 @@ class GpxWebServer(
             val url = "http://$ip:$port"
             _serverUrl.value = url
 
+            // Generate cryptographically secure 4-digit PIN
+            val pin = String.format(Locale.US, "%04d", SecureRandom().nextInt(10000))
+            _currentPin.value = pin
+            failedAttempts = 0
+            lockoutUntil = 0L
+
             engine = embeddedServer(CIO, port = port, host = "0.0.0.0") {
                 routing {
                     get("/") {
@@ -92,41 +105,110 @@ class GpxWebServer(
                     }
 
                     post("/upload") {
+                        if (System.currentTimeMillis() < lockoutUntil) {
+                            call.respondText(
+                                buildErrorHtml("Too many invalid attempts. Temporary lockout in effect. Try again later."),
+                                ContentType.Text.Html,
+                                status = HttpStatusCode.TooManyRequests
+                            )
+                            return@post
+                        }
+
                         try {
                             val multipart = call.receiveMultipart()
+                            var submittedPin = ""
                             var uploadedFileName = ""
                             var uploadedBytes: ByteArray? = null
+                            var payloadTooLarge = false
 
                             multipart.forEachPart { part ->
-                                if (part is PartData.FileItem) {
-                                    val originalName = part.originalFileName ?: "route.gpx"
-                                    uploadedFileName = originalName
-                                    uploadedBytes = part.provider().readBytes()
+                                when (part) {
+                                    is PartData.FormItem -> {
+                                        if (part.name == "pin") {
+                                            submittedPin = part.value.trim()
+                                        }
+                                    }
+                                    is PartData.FileItem -> {
+                                        uploadedFileName = part.originalFileName ?: "route.gpx"
+                                        val output = ByteArrayOutputStream()
+                                        val buffer = ByteArray(8192)
+                                        var totalBytes = 0L
+                                        part.provider().toInputStream().use { stream ->
+                                            var bytesRead: Int
+                                            while (stream.read(buffer).also { bytesRead = it } != -1) {
+                                                totalBytes += bytesRead
+                                                if (totalBytes > MAX_UPLOAD_SIZE_BYTES) {
+                                                    payloadTooLarge = true
+                                                    break
+                                                }
+                                                output.write(buffer, 0, bytesRead)
+                                            }
+                                        }
+                                        if (!payloadTooLarge) {
+                                            uploadedBytes = output.toByteArray()
+                                        }
+                                    }
+                                    else -> {}
                                 }
                                 part.dispose()
                             }
+
+                            if (payloadTooLarge) {
+                                call.respondText(
+                                    buildErrorHtml("File exceeds maximum allowed size of 5 MB."),
+                                    ContentType.Text.Html,
+                                    status = HttpStatusCode.PayloadTooLarge
+                                )
+                                return@post
+                            }
+
+                            val expectedPin = _currentPin.value
+                            if (expectedPin == null || submittedPin != expectedPin) {
+                                failedAttempts++
+                                if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
+                                    lockoutUntil = System.currentTimeMillis() + LOCKOUT_DURATION_MS
+                                }
+                                call.respondText(
+                                    buildErrorHtml("Invalid 4-digit PIN. Check the PIN currently displayed on your watch screen."),
+                                    ContentType.Text.Html,
+                                    status = HttpStatusCode.Unauthorized
+                                )
+                                return@post
+                            }
+
+                            // Successful PIN validation: reset failed attempts
+                            failedAttempts = 0
 
                             if (uploadedBytes != null && uploadedFileName.isNotEmpty()) {
                                 repository.saveRoute(uploadedFileName, uploadedBytes!!)
                                 val successHtml = buildSuccessHtml(uploadedFileName)
                                 call.respondText(successHtml, ContentType.Text.Html)
                             } else {
-                                call.respondText("No GPX file found in request", status = HttpStatusCode.BadRequest)
+                                call.respondText(
+                                    buildErrorHtml("No valid GPX file was provided in the upload request."),
+                                    ContentType.Text.Html,
+                                    status = HttpStatusCode.BadRequest
+                                )
                             }
                         } catch (e: Exception) {
                             Log.e(TAG, "Error handling upload", e)
-                            call.respondText("Upload failed: ${e.message}", status = HttpStatusCode.InternalServerError)
+                            call.respondText(
+                                buildErrorHtml("Upload failed due to an unexpected server error: ${e.message}"),
+                                ContentType.Text.Html,
+                                status = HttpStatusCode.InternalServerError
+                            )
                         }
                     }
                 }
             }.start(wait = false)
 
             _isRunning.value = true
-            Log.i(TAG, "GPX Web Server started on $url")
+            Log.i(TAG, "GPX Web Server started on $url with PIN $pin")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start GPX Web Server", e)
             _isRunning.value = false
             _serverUrl.value = null
+            _currentPin.value = null
         }
     }
 
@@ -136,17 +218,27 @@ class GpxWebServer(
             engine = null
             _isRunning.value = false
             _serverUrl.value = null
+            _currentPin.value = null
             Log.i(TAG, "GPX Web Server stopped")
         } catch (e: Exception) {
             Log.e(TAG, "Error stopping GPX Web Server", e)
         }
     }
 
+    private fun escapeHtml(text: String): String {
+        return text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&#x27;")
+    }
+
     private fun buildIndexHtml(currentRoutes: List<String>, serverUrl: String): String {
         val routeListItems = if (currentRoutes.isEmpty()) {
             "<li><em>No routes uploaded yet</em></li>"
         } else {
-            currentRoutes.joinToString("\n") { "<li>$it</li>" }
+            currentRoutes.joinToString("\n") { "<li>${escapeHtml(it)}</li>" }
         }
 
         return """
@@ -176,12 +268,37 @@ class GpxWebServer(
                     }
                     h1 { color: #80CBC4; font-size: 22px; margin-top: 0; }
                     p { font-size: 14px; color: #AAA; line-height: 1.5; }
+                    .pin-box {
+                        background: #282828;
+                        border: 1px solid #444;
+                        border-radius: 8px;
+                        padding: 16px;
+                        margin-bottom: 16px;
+                    }
+                    .pin-box label {
+                        display: block;
+                        font-size: 14px;
+                        margin-bottom: 8px;
+                        color: #80CBC4;
+                    }
+                    .pin-box input {
+                        background: #121212;
+                        border: 1px solid #555;
+                        color: #FFF;
+                        font-size: 20px;
+                        font-weight: bold;
+                        letter-spacing: 4px;
+                        text-align: center;
+                        padding: 8px;
+                        width: 140px;
+                        border-radius: 6px;
+                    }
                     .upload-box {
                         border: 2px dashed #444;
                         border-radius: 12px;
                         padding: 24px;
                         text-align: center;
-                        margin: 20px 0;
+                        margin: 16px 0;
                         background: #282828;
                     }
                     input[type=file] {
@@ -209,6 +326,10 @@ class GpxWebServer(
                     <h1>SimpleRoute GPX Upload</h1>
                     <p>Upload a BRouter-generated <code>.gpx</code> file directly to your watch over Wi-Fi.</p>
                     <form action="/upload" method="post" enctype="multipart/form-data">
+                        <div class="pin-box">
+                            <label for="pin">Watch Security PIN:</label>
+                            <input type="text" id="pin" name="pin" maxlength="4" pattern="[0-9]{4}" placeholder="0000" required autocomplete="off" />
+                        </div>
                         <div class="upload-box">
                             <input type="file" name="file" accept=".gpx" required />
                         </div>
@@ -226,6 +347,7 @@ class GpxWebServer(
     }
 
     private fun buildSuccessHtml(fileName: String): String {
+        val safeName = escapeHtml(fileName)
         return """
             <!DOCTYPE html>
             <html lang="en">
@@ -258,7 +380,7 @@ class GpxWebServer(
             <body>
                 <div class="card">
                     <h2>✓ Upload Successful!</h2>
-                    <p><strong>$fileName</strong> has been saved to your watch.</p>
+                    <p><strong>$safeName</strong> has been saved to your watch.</p>
                     <p>You can now open it from the SimpleRoute watch app.</p>
                     <a href="/">← Upload another file</a>
                 </div>
@@ -267,7 +389,52 @@ class GpxWebServer(
         """.trimIndent()
     }
 
+    private fun buildErrorHtml(errorMessage: String): String {
+        val safeMessage = escapeHtml(errorMessage)
+        return """
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Upload Error</title>
+                <style>
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                        background: #121212;
+                        color: #E0E0E0;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                    }
+                    .card {
+                        background: #1E1E1E;
+                        border-radius: 16px;
+                        padding: 32px;
+                        text-align: center;
+                        max-width: 400px;
+                    }
+                    h2 { color: #EF5350; }
+                    a { color: #80CBC4; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 16px; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h2>✕ Upload Failed</h2>
+                    <p>$safeMessage</p>
+                    <a href="/">← Try again</a>
+                </div>
+            </body>
+            </html>
+        """.trimIndent()
+    }
+
     companion object {
         private const val TAG = "GpxWebServer"
+        private const val MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024L // 5 MB
+        private const val MAX_FAILED_ATTEMPTS = 5
+        private const val LOCKOUT_DURATION_MS = 60_000L // 1 minute
     }
 }

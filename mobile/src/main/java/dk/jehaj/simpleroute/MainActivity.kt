@@ -201,9 +201,20 @@ fun PhoneAppScreen(
             isTransferring = true
             transferStatus = "Connecting to ${targetNode.displayName}..."
             try {
-                withContext(Dispatchers.IO) {
-                    val bytes = context.contentResolver.openInputStream(file.uri)?.use {
-                        it.readBytes()
+                    val maxFileBytes = 10 * 1024 * 1024L // 10 MB limit
+                    val bytes = context.contentResolver.openInputStream(file.uri)?.use { stream ->
+                        val out = java.io.ByteArrayOutputStream()
+                        val buffer = ByteArray(8192)
+                        var total = 0L
+                        var read: Int
+                        while (stream.read(buffer).also { read = it } != -1) {
+                            total += read
+                            if (total > maxFileBytes) {
+                                throw IllegalStateException("File exceeds maximum allowed size (10 MB)")
+                            }
+                            out.write(buffer, 0, read)
+                        }
+                        out.toByteArray()
                     } ?: throw Exception("Cannot read file")
 
                     val encodedName = URLEncoder.encode(file.fileName, "UTF-8")

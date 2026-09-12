@@ -55,7 +55,8 @@
         <!-- Data Layer Channel Receiver for Phone GPX Transfer -->
         <service
             android:name=".datalayer.WatchDataLayerListenerService"
-            android:exported="true">
+            android:exported="true"
+            android:permission="com.google.android.gms.permission.BIND_LISTENER_INTENT">
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.CHANNEL_EVENT" />
                 <data android:scheme="wear" android:host="*" android:pathPrefix="/gpx-transfer" />

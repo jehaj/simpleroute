@@ -63,8 +63,7 @@ class RouteRepository(private val context: Context) {
     }
 
     suspend fun saveRoute(fileName: String, inputStream: InputStream): File = withContext(Dispatchers.IO) {
-        val sanitizedName = sanitizeFileName(fileName)
-        val targetFile = File(routesDir, sanitizedName)
+        val targetFile = getSafeRouteFile(fileName)
         FileOutputStream(targetFile).use { output ->
             inputStream.copyTo(output)
         }
@@ -72,8 +71,7 @@ class RouteRepository(private val context: Context) {
     }
 
     suspend fun saveRoute(fileName: String, bytes: ByteArray): File = withContext(Dispatchers.IO) {
-        val sanitizedName = sanitizeFileName(fileName)
-        val targetFile = File(routesDir, sanitizedName)
+        val targetFile = getSafeRouteFile(fileName)
         FileOutputStream(targetFile).use { output ->
             output.write(bytes)
         }
@@ -81,12 +79,31 @@ class RouteRepository(private val context: Context) {
     }
 
     suspend fun deleteRoute(fileName: String): Boolean = withContext(Dispatchers.IO) {
-        val file = File(routesDir, fileName)
-        if (file.exists()) file.delete() else false
+        val targetFile = getSafeRouteFile(fileName)
+        if (targetFile.exists()) targetFile.delete() else false
+    }
+
+    fun getSafeRouteFile(fileName: String): File {
+        val sanitizedName = sanitizeFileName(fileName)
+        val file = File(routesDir, sanitizedName)
+        // Ensure canonical path does not escape routesDir (prevent directory traversal)
+        val baseCanonical = routesDir.canonicalPath
+        val targetCanonical = file.canonicalPath
+        if (!targetCanonical.startsWith(baseCanonical)) {
+            throw SecurityException("Path traversal attempt detected: $fileName")
+        }
+        return file
     }
 
     private fun sanitizeFileName(name: String): String {
-        var clean = name.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
+        // Strip any leading path delimiters
+        var clean = name.substringAfterLast('/').substringAfterLast('\\')
+        clean = clean.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
+        // Strip leading dots to prevent creating hidden files
+        clean = clean.trimStart('.')
+        if (clean.isEmpty()) {
+            clean = "route"
+        }
         if (!clean.endsWith(".gpx", ignoreCase = true)) {
             clean += ".gpx"
         }
