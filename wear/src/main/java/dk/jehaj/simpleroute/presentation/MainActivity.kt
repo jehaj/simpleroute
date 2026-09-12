@@ -1,115 +1,212 @@
-/* While this template provides a good starting point for using Wear Compose, you can always
- * take a look at https://github.com/android/wear-os-samples/tree/main/ComposeStarter to find the
- * most up to date changes to the libraries and their usages.
- */
-
 package dk.jehaj.simpleroute.presentation
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.util.Log
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
-import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
+import androidx.compose.ui.graphics.Color
+import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.lifecycleScope
+import androidx.wear.ambient.AmbientLifecycleObserver
 import androidx.wear.compose.material3.AppScaffold
-import androidx.wear.compose.material3.Button
-import androidx.wear.compose.material3.ButtonDefaults
-import androidx.wear.compose.material3.EdgeButton
-import androidx.wear.compose.material3.ListHeader
-import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
-import androidx.wear.compose.material3.SurfaceTransformation
-import androidx.wear.compose.material3.Text
-import androidx.wear.compose.material3.lazy.rememberTransformationSpec
-import androidx.wear.compose.material3.lazy.transformedHeight
-import androidx.wear.compose.ui.tooling.preview.WearPreviewDevices
-import androidx.wear.compose.ui.tooling.preview.WearPreviewFontScales
-import dk.jehaj.simpleroute.R
+import dk.jehaj.simpleroute.data.repository.RouteRepository
+import dk.jehaj.simpleroute.navigation.NavigationStateHolder
 import dk.jehaj.simpleroute.presentation.theme.SimpleRouteTheme
+import dk.jehaj.simpleroute.webserver.GpxWebServer
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import java.io.File
 
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            WearApp("Android")
-        }
-    }
+enum class Screen {
+    ROUTE_LIST,
+    NAVIGATION
 }
 
-@Composable
-fun WearApp(greetingName: String) {
-    SimpleRouteTheme {
-        AppScaffold {
-            val listState = rememberTransformingLazyColumnState()
-            val transformationSpec = rememberTransformationSpec()
-            ScreenScaffold(
-                scrollState = listState,
-                edgeButton = {
-                    EdgeButton(
-                        onClick = { /*TODO*/ },
-                        colors =
-                            ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            ),
-                    ) {
-                        Text("More")
-                    }
-                },
-            ) { contentPadding -> // ScreenScaffold provides default padding; adjust as needed
-                TransformingLazyColumn(contentPadding = contentPadding, state = listState) {
-                    item {
-                        ListHeader(
-                            modifier =
-                                Modifier.fillMaxWidth().transformedHeight(this, transformationSpec),
-                            transformation = SurfaceTransformation(transformationSpec),
-                        ) {
-                            Text(text = stringResource(R.string.hello_world, greetingName))
-                        }
-                    }
-                    item {
-                        Button(
-                            onClick = { /*TODO*/ },
-                            modifier = Modifier.fillMaxWidth()
-                                .transformedHeight(this, transformationSpec),
-                            transformation = SurfaceTransformation(transformationSpec),
-                        ) {
-                            Text("Button A")
-                        }
-                    }
-                    item {
-                        Button(
-                            onClick = { /*TODO*/ },
-                            modifier = Modifier.fillMaxWidth()
-                                .transformedHeight(this, transformationSpec),
-                            transformation = SurfaceTransformation(transformationSpec),
-                        ) {
-                            Text("Button B")
-                        }
-                    }
-                    item {
-                        Button(
-                            onClick = { /*TODO*/ },
-                            modifier = Modifier.fillMaxWidth()
-                                .transformedHeight(this, transformationSpec),
-                            transformation = SurfaceTransformation(transformationSpec),
-                        ) {
-                            Text("Button C")
-                        }
-                    }
+class MainActivity : ComponentActivity() {
 
+    private val isAmbientState = MutableStateFlow(false)
+    private val ambientUpdateTick = MutableStateFlow(0L)
+
+    private val ambientCallback = object : AmbientLifecycleObserver.AmbientLifecycleCallback {
+        override fun onEnterAmbient(ambientDetails: AmbientLifecycleObserver.AmbientDetails) {
+            super.onEnterAmbient(ambientDetails)
+            isAmbientState.value = true
+        }
+
+        override fun onExitAmbient() {
+            super.onExitAmbient()
+            isAmbientState.value = false
+        }
+
+        override fun onUpdateAmbient() {
+            super.onUpdateAmbient()
+            // Ambient update tick at 0.1 Hz (every 10s or 60s)
+            ambientUpdateTick.value = System.currentTimeMillis()
+        }
+    }
+
+    private val ambientObserver = AmbientLifecycleObserver(this, ambientCallback)
+    private lateinit var webServer: GpxWebServer
+    private lateinit var repository: RouteRepository
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
+        super.onCreate(savedInstanceState)
+
+        repository = RouteRepository.getInstance(applicationContext)
+        webServer = GpxWebServer(applicationContext)
+
+        lifecycle.addObserver(ambientObserver)
+
+        // Listen for Wake-on-Alert events from NavigationEngine
+        lifecycleScope.launch {
+            NavigationStateHolder.alertWakeEvents.collect { alert ->
+                Log.i(TAG, "Wake-on-Alert triggered for cue ${alert.cue.turn}")
+                wakeScreenFromAmbient()
+            }
+        }
+
+        setContent {
+            SimpleRouteTheme {
+                AppScaffold(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black)
+                ) {
+                    MainAppContent(
+                        repository = repository,
+                        webServer = webServer,
+                        isAmbientFlow = isAmbientState,
+                        onWakeScreen = { wakeScreenFromAmbient() }
+                    )
                 }
             }
         }
     }
+
+    @Suppress("DEPRECATION")
+    private fun wakeScreenFromAmbient() {
+        runOnUiThread {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    setShowWhenLocked(true)
+                    setTurnScreenOn(true)
+                } else {
+                    window.addFlags(
+                        WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                    )
+                }
+
+                val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                val wakeLock = powerManager?.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                    "SimpleRoute:ScreenAlertWakeLock"
+                )
+                wakeLock?.acquire(4000L)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error waking screen", e)
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        webServer.stop()
+    }
+
+    companion object {
+        private const val TAG = "MainActivity"
+    }
 }
 
-@WearPreviewDevices
-@WearPreviewFontScales
 @Composable
-fun DefaultPreview() {
-    WearApp("Preview Android")
+fun MainAppContent(
+    repository: RouteRepository,
+    webServer: GpxWebServer,
+    isAmbientFlow: kotlinx.coroutines.flow.StateFlow<Boolean>,
+    onWakeScreen: () -> Unit
+) {
+    val isAmbient by isAmbientFlow.collectAsState()
+    val navState by NavigationStateHolder.navigationState.collectAsState()
+    var currentScreen by remember { mutableStateOf(Screen.ROUTE_LIST) }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Permissions check
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { }
+
+    LaunchedEffect(Unit) {
+        val permissions = mutableListOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        permissionLauncher.launch(permissions.toTypedArray())
+    }
+
+    // Auto-navigate to navigation screen if navigation is active
+    LaunchedEffect(navState.isNavigating) {
+        if (navState.isNavigating && currentScreen == Screen.ROUTE_LIST) {
+            currentScreen = Screen.NAVIGATION
+        }
+    }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    when (currentScreen) {
+        Screen.ROUTE_LIST -> {
+            RouteListScreen(
+                repository = repository,
+                webServer = webServer,
+                isNavigating = navState.isNavigating,
+                onResumeNavigation = {
+                    currentScreen = Screen.NAVIGATION
+                },
+                onStopNavigation = {
+                    NavigationStateHolder.stopNavigation(context)
+                },
+                onSelectRoute = { file ->
+                    coroutineScope.launch {
+                        val route = repository.loadRoute(file)
+                        NavigationStateHolder.startNavigation(context, route)
+                        currentScreen = Screen.NAVIGATION
+                    }
+                }
+            )
+        }
+        Screen.NAVIGATION -> {
+            NavigationScreen(
+                state = navState,
+                isAmbient = isAmbient,
+                onStopNavigation = {
+                    NavigationStateHolder.stopNavigation(context)
+                    currentScreen = Screen.ROUTE_LIST
+                }
+            )
+        }
+    }
 }
