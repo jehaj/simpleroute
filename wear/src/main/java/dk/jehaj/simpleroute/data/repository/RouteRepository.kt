@@ -5,6 +5,9 @@ import android.util.Log
 import dk.jehaj.simpleroute.data.model.Route
 import dk.jehaj.simpleroute.data.parser.GpxParser
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
@@ -14,6 +17,8 @@ import java.io.InputStream
 class RouteRepository(private val context: Context) {
 
     private val parser = GpxParser()
+    private val _routeFilesFlow = MutableStateFlow<List<File>>(emptyList())
+    val routeFilesFlow: StateFlow<List<File>> = _routeFilesFlow.asStateFlow()
 
     val routesDir: File
         get() = File(context.filesDir, "routes").apply {
@@ -24,6 +29,23 @@ class RouteRepository(private val context: Context) {
 
     init {
         ensureInitialRoutes()
+        refreshRoutesSync()
+    }
+
+    private fun refreshRoutesSync() {
+        val files = routesDir.listFiles { _, name ->
+            name.endsWith(".gpx", ignoreCase = true)
+        }?.toList() ?: emptyList()
+        _routeFilesFlow.value = files.sortedBy { it.name }
+    }
+
+    suspend fun refreshRoutes(): List<File> = withContext(Dispatchers.IO) {
+        val files = routesDir.listFiles { _, name ->
+            name.endsWith(".gpx", ignoreCase = true)
+        }?.toList() ?: emptyList()
+        val sorted = files.sortedBy { it.name }
+        _routeFilesFlow.value = sorted
+        sorted
     }
 
     private fun ensureInitialRoutes() {
@@ -49,12 +71,7 @@ class RouteRepository(private val context: Context) {
         }
     }
 
-    suspend fun getRouteFiles(): List<File> = withContext(Dispatchers.IO) {
-        val files = routesDir.listFiles { _, name ->
-            name.endsWith(".gpx", ignoreCase = true)
-        }?.toList() ?: emptyList()
-        files.sortedBy { it.name }
-    }
+    suspend fun getRouteFiles(): List<File> = refreshRoutes()
 
     suspend fun loadRoute(file: File): Route = withContext(Dispatchers.IO) {
         FileInputStream(file).use { input ->
@@ -67,6 +84,7 @@ class RouteRepository(private val context: Context) {
         FileOutputStream(targetFile).use { output ->
             inputStream.copyTo(output)
         }
+        refreshRoutes()
         targetFile
     }
 
@@ -75,12 +93,15 @@ class RouteRepository(private val context: Context) {
         FileOutputStream(targetFile).use { output ->
             output.write(bytes)
         }
+        refreshRoutes()
         targetFile
     }
 
     suspend fun deleteRoute(fileName: String): Boolean = withContext(Dispatchers.IO) {
         val targetFile = getSafeRouteFile(fileName)
-        if (targetFile.exists()) targetFile.delete() else false
+        val deleted = if (targetFile.exists()) targetFile.delete() else false
+        if (deleted) refreshRoutes()
+        deleted
     }
 
     fun getSafeRouteFile(fileName: String): File {

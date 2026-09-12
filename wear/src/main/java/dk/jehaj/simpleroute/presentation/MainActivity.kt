@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.util.Log
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -29,13 +30,19 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import androidx.wear.ambient.AmbientLifecycleObserver
 import androidx.wear.compose.material3.AppScaffold
+import com.google.android.gms.tasks.Tasks
+import com.google.android.gms.wearable.ChannelClient
+import com.google.android.gms.wearable.Wearable
 import dk.jehaj.simpleroute.data.repository.RouteRepository
+import dk.jehaj.simpleroute.datalayer.WatchDataLayerListenerService
 import dk.jehaj.simpleroute.navigation.NavigationStateHolder
 import dk.jehaj.simpleroute.presentation.theme.SimpleRouteTheme
 import dk.jehaj.simpleroute.webserver.GpxWebServer
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
+import java.net.URLDecoder
 
 enum class Screen {
     ROUTE_LIST,
@@ -69,6 +76,43 @@ class MainActivity : ComponentActivity() {
     private lateinit var webServer: GpxWebServer
     private lateinit var repository: RouteRepository
 
+    private val channelCallback = object : ChannelClient.ChannelCallback() {
+        override fun onChannelOpened(channel: ChannelClient.Channel) {
+            val path = channel.path
+            Log.i(TAG, "Channel opened in MainActivity: $path")
+            if (path.startsWith(WatchDataLayerListenerService.CHANNEL_PATH_PREFIX)) {
+                val fileNameRaw = path.removePrefix(WatchDataLayerListenerService.CHANNEL_PATH_PREFIX).trimStart('/')
+                val fileName = if (fileNameRaw.isNotEmpty()) {
+                    URLDecoder.decode(fileNameRaw, "UTF-8")
+                } else {
+                    "shared_route.gpx"
+                }
+
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        val channelClient = Wearable.getChannelClient(applicationContext)
+                        val inputStream = Tasks.await(channelClient.getInputStream(channel))
+                        val bytes = inputStream.use { it.readBytes() }
+                        if (bytes.isNotEmpty()) {
+                            repository.saveRoute(fileName, bytes)
+                            Log.i(TAG, "MainActivity saved GPX route: $fileName (${bytes.size} bytes)")
+                            launch(Dispatchers.Main) {
+                                Toast.makeText(
+                                    applicationContext,
+                                    "Route received: $fileName",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                        Tasks.await(channelClient.close(channel))
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed reading GPX in MainActivity", e)
+                    }
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
@@ -77,6 +121,12 @@ class MainActivity : ComponentActivity() {
         webServer = GpxWebServer(applicationContext)
 
         lifecycle.addObserver(ambientObserver)
+
+        try {
+            Wearable.getChannelClient(this).registerChannelCallback(channelCallback)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed registering channel callback", e)
+        }
 
         // Listen for Wake-on-Alert events from NavigationEngine
         lifecycleScope.launch {
@@ -130,8 +180,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        lifecycleScope.launch {
+            repository.refreshRoutes()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            Wearable.getChannelClient(this).unregisterChannelCallback(channelCallback)
+        } catch (e: Exception) { }
         webServer.stop()
     }
 
@@ -168,10 +228,12 @@ fun MainAppContent(
         permissionLauncher.launch(permissions.toTypedArray())
     }
 
-    // Auto-navigate to navigation screen if navigation is active
+    // Auto-navigate to navigation screen if navigation is active, or back to route list when stopped
     LaunchedEffect(navState.isNavigating) {
         if (navState.isNavigating && currentScreen == Screen.ROUTE_LIST) {
             currentScreen = Screen.NAVIGATION
+        } else if (!navState.isNavigating && currentScreen == Screen.NAVIGATION) {
+            currentScreen = Screen.ROUTE_LIST
         }
     }
 

@@ -1,7 +1,8 @@
 package dk.jehaj.simpleroute.webserver
 
 import android.content.Context
-import android.net.wifi.WifiManager
+import android.net.ConnectivityManager
+import android.net.LinkProperties
 import android.util.Log
 import dk.jehaj.simpleroute.data.repository.RouteRepository
 import io.ktor.http.ContentType
@@ -17,7 +18,7 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
-import io.ktor.utils.io.jvm.javaio.toInputStream
+import io.ktor.util.asStream
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,20 +49,16 @@ class GpxWebServer(
 
     fun getLocalIpAddress(): String? {
         try {
-            // First attempt: check WifiManager ipAddress
-            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-            val ipInt = wifiManager?.connectionInfo?.ipAddress ?: 0
-            if (ipInt != 0) {
-                val ipString = String.format(
-                    Locale.US,
-                    "%d.%d.%d.%d",
-                    ipInt and 0xff,
-                    (ipInt shr 8) and 0xff,
-                    (ipInt shr 16) and 0xff,
-                    (ipInt shr 24) and 0xff
-                )
-                if (ipString != "0.0.0.0") return ipString
+            // First attempt: check ConnectivityManager for active network link properties
+            val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val activeNetwork = connectivityManager?.activeNetwork
+            val linkProperties = connectivityManager?.getLinkProperties(activeNetwork)
+
+            val linkAddress = linkProperties?.linkAddresses?.find {
+                val address = it.address
+                address is Inet4Address && !address.isLoopbackAddress
             }
+            if (linkAddress != null) return linkAddress.address.hostAddress
 
             // Fallback: enumerate network interfaces
             val interfaces = NetworkInterface.getNetworkInterfaces()
@@ -133,7 +130,7 @@ class GpxWebServer(
                                         val output = ByteArrayOutputStream()
                                         val buffer = ByteArray(8192)
                                         var totalBytes = 0L
-                                        part.provider().toInputStream().use { stream ->
+                                        part.provider().asStream().use { stream ->
                                             var bytesRead: Int
                                             while (stream.read(buffer).also { bytesRead = it } != -1) {
                                                 totalBytes += bytesRead

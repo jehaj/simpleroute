@@ -1,6 +1,7 @@
 package dk.jehaj.simpleroute.presentation
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,7 +56,7 @@ fun RouteListScreen(
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
-    var routeFiles by remember { mutableStateOf<List<File>>(emptyList()) }
+    val routeFiles by repository.routeFilesFlow.collectAsState()
     var showWifiDialog by remember { mutableStateOf(false) }
 
     val isServerRunning by webServer.isRunning.collectAsState()
@@ -64,7 +65,7 @@ fun RouteListScreen(
 
     fun refreshRoutes() {
         coroutineScope.launch {
-            routeFiles = repository.getRouteFiles()
+            repository.refreshRoutes()
         }
     }
 
@@ -155,12 +156,28 @@ fun RouteListScreen(
 
             // Route list section
             item {
-                Text(
-                    text = "Routes (${routeFiles.size})",
-                    color = Color.Gray,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(start = 12.dp, top = 8.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 12.dp, top = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Routes (${routeFiles.size})",
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = "↻ Refresh",
+                        color = Color(0xFF80CBC4),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clickable { refreshRoutes() }
+                            .padding(4.dp)
+                    )
+                }
             }
 
             if (routeFiles.isEmpty()) {

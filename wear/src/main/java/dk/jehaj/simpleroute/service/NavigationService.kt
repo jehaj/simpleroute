@@ -220,6 +220,16 @@ class NavigationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val stopIntent = Intent(this, NavigationService::class.java).apply {
+            action = ACTION_STOP_NAVIGATION
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this,
+            1,
+            stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(activeRoute?.name ?: "SimpleRoute")
             .setContentText(text)
@@ -228,6 +238,11 @@ class NavigationService : Service() {
             .setContentIntent(pendingIntent)
             .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .addAction(
+                R.drawable.ic_stop,
+                "Stop Ride",
+                stopPendingIntent
+            )
             .build()
     }
 

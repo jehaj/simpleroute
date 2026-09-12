@@ -56,6 +56,7 @@ import dk.jehaj.simpleroute.ui.theme.SimpleRouteTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.URLEncoder
@@ -201,9 +202,10 @@ fun PhoneAppScreen(
             isTransferring = true
             transferStatus = "Connecting to ${targetNode.displayName}..."
             try {
+                withContext(Dispatchers.IO) {
                     val maxFileBytes = 10 * 1024 * 1024L // 10 MB limit
                     val bytes = context.contentResolver.openInputStream(file.uri)?.use { stream ->
-                        val out = java.io.ByteArrayOutputStream()
+                        val out = ByteArrayOutputStream()
                         val buffer = ByteArray(8192)
                         var total = 0L
                         var read: Int
@@ -229,7 +231,13 @@ fun PhoneAppScreen(
                         out.flush()
                     }
 
-                    Tasks.await(channelClient.close(channel))
+                    // Allow watch time to read bytes before sender closes
+                    kotlinx.coroutines.delay(1000L)
+                    try {
+                        Tasks.await(channelClient.close(channel))
+                    } catch (e: Exception) {
+                        // Channel may already be closed by watch upon receiving EOF
+                    }
                 }
                 transferStatus = "✓ Success! Sent ${file.fileName} to ${targetNode.displayName}."
             } catch (e: Exception) {
