@@ -1,6 +1,5 @@
 package dk.jehaj.simpleroute.presentation
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -25,7 +24,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -33,8 +31,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.wear.compose.material3.Button
-import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.FilledIconButton
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.IconButtonDefaults
 import androidx.wear.compose.material3.Text
 import dk.jehaj.simpleroute.R
 import dk.jehaj.simpleroute.navigation.NavigationState
@@ -170,16 +169,17 @@ fun NavigationScreen(
                     ) {
                         // Cancel / Go back ('X')
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Button(
+                            FilledIconButton(
                                 onClick = { showStopDialog = false },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F)),
-                                modifier = Modifier.size(52.dp),
-                                shape = CircleShape
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = Color(0xFF37474F),
+                                    contentColor = Color.White
+                                ),
+                                modifier = Modifier.size(52.dp)
                             ) {
-                                Image(
+                                Icon(
                                     painter = painterResource(R.drawable.ic_close),
                                     contentDescription = "Cancel",
-                                    colorFilter = ColorFilter.tint(Color.White),
                                     modifier = Modifier.size(24.dp)
                                 )
                             }
@@ -193,20 +193,21 @@ fun NavigationScreen(
 
                         // Stop ride ('■')
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Button(
+                            FilledIconButton(
                                 onClick = {
                                     showStopDialog = false
                                     onStopNavigation()
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C)),
-                                modifier = Modifier.size(52.dp),
-                                shape = CircleShape
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = Color(0xFFB71C1C),
+                                    contentColor = Color.White
+                                ),
+                                modifier = Modifier.size(52.dp)
                             ) {
-                                Image(
+                                Icon(
                                     painter = painterResource(R.drawable.ic_stop),
                                     contentDescription = "Stop",
-                                    colorFilter = ColorFilter.tint(Color.White),
-                                    modifier = Modifier.size(22.dp)
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                             Spacer(modifier = Modifier.height(4.dp))

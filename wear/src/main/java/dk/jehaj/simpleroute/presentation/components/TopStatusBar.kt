@@ -34,7 +34,7 @@ fun TopStatusBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = 10.dp, start = 16.dp, end = 16.dp),
+            .padding(top = 28.dp, start = 16.dp, end = 16.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
