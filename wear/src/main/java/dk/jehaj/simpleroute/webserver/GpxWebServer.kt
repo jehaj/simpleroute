@@ -14,6 +14,7 @@ import io.ktor.server.cio.CIO
 import io.ktor.server.engine.ApplicationEngine
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.request.receiveMultipart
+import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -196,6 +197,67 @@ class GpxWebServer(
                             )
                         }
                     }
+
+                    post("/delete") {
+                        if (System.currentTimeMillis() < lockoutUntil) {
+                            call.respondText(
+                                buildErrorHtml("Too many invalid attempts. Temporary lockout in effect. Try again later."),
+                                ContentType.Text.Html,
+                                status = HttpStatusCode.TooManyRequests
+                            )
+                            return@post
+                        }
+
+                        try {
+                            val params = call.receiveParameters()
+                            val submittedPin = params["pin"]?.trim() ?: ""
+                            val fileName = params["fileName"]?.trim() ?: ""
+
+                            val expectedPin = _currentPin.value
+                            if (expectedPin == null || submittedPin != expectedPin) {
+                                failedAttempts++
+                                if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
+                                    lockoutUntil = System.currentTimeMillis() + LOCKOUT_DURATION_MS
+                                }
+                                call.respondText(
+                                    buildErrorHtml("Invalid 4-digit PIN. Check the PIN currently displayed on your watch screen."),
+                                    ContentType.Text.Html,
+                                    status = HttpStatusCode.Unauthorized
+                                )
+                                return@post
+                            }
+
+                            // Successful PIN validation: reset failed attempts
+                            failedAttempts = 0
+
+                            if (fileName.isNotEmpty()) {
+                                val deleted = repository.deleteRoute(fileName)
+                                if (deleted) {
+                                    val successHtml = buildDeleteSuccessHtml(fileName)
+                                    call.respondText(successHtml, ContentType.Text.Html)
+                                } else {
+                                    call.respondText(
+                                        buildErrorHtml("Route file not found or could not be deleted: $fileName"),
+                                        ContentType.Text.Html,
+                                        status = HttpStatusCode.NotFound
+                                    )
+                                }
+                            } else {
+                                call.respondText(
+                                    buildErrorHtml("No route file specified for deletion."),
+                                    ContentType.Text.Html,
+                                    status = HttpStatusCode.BadRequest
+                                )
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error handling delete", e)
+                            call.respondText(
+                                buildErrorHtml("Delete failed due to an unexpected server error: ${e.message}"),
+                                ContentType.Text.Html,
+                                status = HttpStatusCode.InternalServerError
+                            )
+                        }
+                    }
                 }
             }.start(wait = false)
 
@@ -235,7 +297,19 @@ class GpxWebServer(
         val routeListItems = if (currentRoutes.isEmpty()) {
             "<li><em>No routes uploaded yet</em></li>"
         } else {
-            currentRoutes.joinToString("\n") { "<li>${escapeHtml(it)}</li>" }
+            currentRoutes.joinToString("\n") { name ->
+                val safeName = escapeHtml(name)
+                """
+                <li style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #333;">
+                    <span style="word-break: break-all; margin-right: 12px; font-size: 14px;">$safeName</span>
+                    <form action="/delete" method="post" onsubmit="return confirmDelete(this, '$safeName')" style="margin: 0; flex-shrink: 0;">
+                        <input type="hidden" name="fileName" value="$safeName" />
+                        <input type="hidden" name="pin" value="" />
+                        <button type="submit" style="background: #C62828; color: white; border: none; padding: 6px 14px; font-size: 12px; font-weight: bold; border-radius: 6px; cursor: pointer; width: auto;">Delete</button>
+                    </form>
+                </li>
+                """.trimIndent()
+            }
         }
 
         return """
@@ -314,9 +388,24 @@ class GpxWebServer(
                         width: 100%;
                     }
                     button:hover { background: #00796B; }
-                    ul { list-style: square; padding-left: 20px; font-size: 14px; }
+                    ul { list-style: none; padding-left: 0; }
                     li { margin-bottom: 6px; }
                 </style>
+                <script>
+                    function confirmDelete(form, routeName) {
+                        var pinInput = document.getElementById('pin');
+                        var pin = pinInput ? pinInput.value.trim() : '';
+                        if (!pin) {
+                            pin = prompt('Enter the 4-digit Watch PIN to confirm deletion of "' + routeName + '":');
+                            if (!pin) return false;
+                        }
+                        if (!confirm('Are you sure you want to delete "' + routeName + '" from your watch?')) {
+                            return false;
+                        }
+                        form.elements['pin'].value = pin;
+                        return true;
+                    }
+                </script>
             </head>
             <body>
                 <div class="container">
@@ -337,6 +426,48 @@ class GpxWebServer(
                     <ul>
                         $routeListItems
                     </ul>
+                </div>
+            </body>
+            </html>
+        """.trimIndent()
+    }
+
+    private fun buildDeleteSuccessHtml(fileName: String): String {
+        val safeName = escapeHtml(fileName)
+        return """
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Route Deleted</title>
+                <style>
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                        background: #121212;
+                        color: #E0E0E0;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                    }
+                    .card {
+                        background: #1E1E1E;
+                        border-radius: 16px;
+                        padding: 32px;
+                        text-align: center;
+                        max-width: 400px;
+                    }
+                    h2 { color: #EF5350; }
+                    a { color: #80CBC4; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 16px; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h2>✓ Route Deleted</h2>
+                    <p><strong>$safeName</strong> has been deleted from your watch.</p>
+                    <a href="/">← Back to Routes</a>
                 </div>
             </body>
             </html>

@@ -13,3 +13,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Ignore spec and root test GPX file
+/SPEC.md
+/Brendstrup - Aarhus.gpx

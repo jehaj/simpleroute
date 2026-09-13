@@ -14,18 +14,20 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 
-class RouteRepository(private val context: Context) {
+class RouteRepository(
+    private val context: Context? = null,
+    baseDir: File? = null
+) {
 
     private val parser = GpxParser()
     private val _routeFilesFlow = MutableStateFlow<List<File>>(emptyList())
     val routeFilesFlow: StateFlow<List<File>> = _routeFilesFlow.asStateFlow()
 
-    val routesDir: File
-        get() = File(context.filesDir, "routes").apply {
-            if (!exists()) {
-                mkdirs()
-            }
+    val routesDir: File = baseDir ?: File(context?.filesDir, "routes").apply {
+        if (!exists()) {
+            mkdirs()
         }
+    }
 
     init {
         ensureInitialRoutes()
@@ -49,23 +51,35 @@ class RouteRepository(private val context: Context) {
     }
 
     private fun ensureInitialRoutes() {
+        val currentContext = context ?: return
         try {
+            val prefs = currentContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val alreadySeeded = prefs.getBoolean(KEY_INITIAL_ROUTES_SEEDED, false)
             val dir = routesDir
             val existing = dir.listFiles { _, name -> name.endsWith(".gpx", ignoreCase = true) }
-            if (existing.isNullOrEmpty()) {
-                // Copy bundled assets if present
-                val assetRoutes = context.assets.list("routes") ?: emptyArray()
-                for (assetName in assetRoutes) {
-                    if (assetName.endsWith(".gpx", ignoreCase = true)) {
-                        val targetFile = File(dir, assetName)
-                        context.assets.open("routes/$assetName").use { input ->
-                            FileOutputStream(targetFile).use { output ->
-                                input.copyTo(output)
-                            }
+
+            if (alreadySeeded) {
+                return
+            }
+
+            if (!existing.isNullOrEmpty()) {
+                prefs.edit().putBoolean(KEY_INITIAL_ROUTES_SEEDED, true).apply()
+                return
+            }
+
+            // First run with no routes: copy bundled assets if present
+            val assetRoutes = currentContext.assets.list("routes") ?: emptyArray()
+            for (assetName in assetRoutes) {
+                if (assetName.endsWith(".gpx", ignoreCase = true)) {
+                    val targetFile = File(dir, assetName)
+                    currentContext.assets.open("routes/$assetName").use { input ->
+                        FileOutputStream(targetFile).use { output ->
+                            input.copyTo(output)
                         }
                     }
                 }
             }
+            prefs.edit().putBoolean(KEY_INITIAL_ROUTES_SEEDED, true).apply()
         } catch (e: Exception) {
             Log.e(TAG, "Error ensuring initial routes", e)
         }
@@ -97,8 +111,29 @@ class RouteRepository(private val context: Context) {
         targetFile
     }
 
+    suspend fun deleteRoute(file: File): Boolean = withContext(Dispatchers.IO) {
+        val baseCanonical = routesDir.canonicalFile.toPath()
+        val targetCanonical = file.canonicalFile.toPath()
+        if (!targetCanonical.startsWith(baseCanonical)) {
+            throw SecurityException("Path traversal attempt detected: ${file.path}")
+        }
+        val deleted = if (file.exists()) file.delete() else false
+        if (deleted) refreshRoutes()
+        deleted
+    }
+
     suspend fun deleteRoute(fileName: String): Boolean = withContext(Dispatchers.IO) {
-        val targetFile = getSafeRouteFile(fileName)
+        val directFile = File(routesDir, fileName)
+        val targetFile = if (directFile.exists()) {
+            val baseCanonical = routesDir.canonicalFile.toPath()
+            val targetCanonical = directFile.canonicalFile.toPath()
+            if (!targetCanonical.startsWith(baseCanonical)) {
+                throw SecurityException("Path traversal attempt detected: $fileName")
+            }
+            directFile
+        } else {
+            getSafeRouteFile(fileName)
+        }
         val deleted = if (targetFile.exists()) targetFile.delete() else false
         if (deleted) refreshRoutes()
         deleted
@@ -108,8 +143,8 @@ class RouteRepository(private val context: Context) {
         val sanitizedName = sanitizeFileName(fileName)
         val file = File(routesDir, sanitizedName)
         // Ensure canonical path does not escape routesDir (prevent directory traversal)
-        val baseCanonical = routesDir.canonicalPath
-        val targetCanonical = file.canonicalPath
+        val baseCanonical = routesDir.canonicalFile.toPath()
+        val targetCanonical = file.canonicalFile.toPath()
         if (!targetCanonical.startsWith(baseCanonical)) {
             throw SecurityException("Path traversal attempt detected: $fileName")
         }
@@ -133,6 +168,8 @@ class RouteRepository(private val context: Context) {
 
     companion object {
         private const val TAG = "RouteRepository"
+        private const val PREFS_NAME = "simpleroute_repository_prefs"
+        private const val KEY_INITIAL_ROUTES_SEEDED = "initial_routes_seeded"
 
         @Volatile
         private var instance: RouteRepository? = null

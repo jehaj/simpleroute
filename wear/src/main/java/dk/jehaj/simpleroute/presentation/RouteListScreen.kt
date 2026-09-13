@@ -58,6 +58,7 @@ fun RouteListScreen(
     val coroutineScope = rememberCoroutineScope()
     val routeFiles by repository.routeFilesFlow.collectAsState()
     var showWifiDialog by remember { mutableStateOf(false) }
+    var routeToDelete by remember { mutableStateOf<File?>(null) }
 
     val isServerRunning by webServer.isRunning.collectAsState()
     val serverUrl by webServer.serverUrl.collectAsState()
@@ -180,6 +181,20 @@ fun RouteListScreen(
                 }
             }
 
+            if (routeFiles.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "Hold route to delete",
+                        color = Color(0xFF78909C),
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp)
+                    )
+                }
+            }
+
             if (routeFiles.isEmpty()) {
                 item {
                     Text(
@@ -196,6 +211,8 @@ fun RouteListScreen(
                 items(routeFiles) { file ->
                     Card(
                         onClick = { onSelectRoute(file) },
+                        onLongClick = { routeToDelete = file },
+                        onLongClickLabel = "Delete route ${file.nameWithoutExtension}",
                         colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -214,6 +231,69 @@ fun RouteListScreen(
                                 color = Color.Gray,
                                 fontSize = 10.sp
                             )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Delete Route Confirmation Dialog Overlay
+        if (routeToDelete != null) {
+            val file = routeToDelete!!
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.95f))
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "Delete Route?",
+                        color = Color(0xFFEF5350),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = file.nameWithoutExtension,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = { routeToDelete = null },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Cancel", fontSize = 11.sp)
+                        }
+                        Button(
+                            onClick = {
+                                val target = file
+                                routeToDelete = null
+                                coroutineScope.launch {
+                                    if (isNavigating) {
+                                        onStopNavigation()
+                                    }
+                                    repository.deleteRoute(target)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Delete", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
