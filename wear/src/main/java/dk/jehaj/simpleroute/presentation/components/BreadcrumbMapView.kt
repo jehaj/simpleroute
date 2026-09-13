@@ -116,6 +116,20 @@ fun BreadcrumbMapView(
                             join = StrokeJoin.Round
                         )
                     )
+
+                    // Draw route direction arrows along upcoming trail to show travel direction
+                    val arrows = calculateRouteArrows(
+                        trackPoints = trackPoints,
+                        currentTrackIndex = currentTrackIndex,
+                        windowEnd = windowEnd,
+                        cx = cx,
+                        cy = cy,
+                        minDistanceFromCenter = 20.dp.toPx(),
+                        maxDistanceFromCenter = (size.width / 2f) * 0.98f,
+                        arrowIntervalMeters = 40.0,
+                        geoToScreen = ::geoToScreen
+                    )
+                    drawRouteArrows(arrows, isAmbient)
                 }
 
                 // Draw turn cues along the visible track
@@ -133,11 +147,11 @@ fun BreadcrumbMapView(
                     }
                 }
             }
-
-            // Fixed Rider Indicator at center (cx, cy)
-            // Points straight UP because bearing-up mode rotates world around rider
-            drawRiderChevron(cx, cy, isAmbient)
         }
+
+        // Fixed Rider Indicator at center (cx, cy)
+        // Points straight UP because bearing-up mode rotates world around rider
+        drawRiderChevron(cx, cy, isAmbient)
     }
 }
 
