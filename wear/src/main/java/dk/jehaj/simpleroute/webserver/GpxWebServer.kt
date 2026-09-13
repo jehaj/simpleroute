@@ -3,6 +3,11 @@ package dk.jehaj.simpleroute.webserver
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.LinkProperties
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.net.wifi.WifiManager
+import android.os.PowerManager
 import android.util.Log
 import dk.jehaj.simpleroute.data.repository.RouteRepository
 import io.ktor.http.ContentType
@@ -20,9 +25,15 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.util.asStream
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import java.net.Inet4Address
 import java.net.NetworkInterface
@@ -36,6 +47,15 @@ class GpxWebServer(
     private val repository = RouteRepository.getInstance(context)
     private var engine: ApplicationEngine? = null
 
+    private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+    private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+    private val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var ipResolutionJob: Job? = null
+
     private val _isRunning = MutableStateFlow(false)
     val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
 
@@ -48,35 +68,82 @@ class GpxWebServer(
     private var failedAttempts = 0
     private var lockoutUntil = 0L
 
+    private fun extractIpv4(linkProperties: LinkProperties?): String? {
+        return linkProperties?.linkAddresses?.find {
+            val address = it.address
+            address is Inet4Address && !address.isLoopbackAddress && !address.isLinkLocalAddress
+        }?.address?.hostAddress
+    }
+
     fun getLocalIpAddress(): String? {
+        // 1. Check WifiManager connection info
         try {
-            // First attempt: check ConnectivityManager for active network link properties
-            val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            val activeNetwork = connectivityManager?.activeNetwork
-            val linkProperties = connectivityManager?.getLinkProperties(activeNetwork)
-
-            val linkAddress = linkProperties?.linkAddresses?.find {
-                val address = it.address
-                address is Inet4Address && !address.isLoopbackAddress
+            @Suppress("DEPRECATION")
+            val ipInt = wifiManager?.connectionInfo?.ipAddress ?: 0
+            if (ipInt != 0) {
+                val ip = String.format(
+                    Locale.US,
+                    "%d.%d.%d.%d",
+                    ipInt and 0xff,
+                    (ipInt shr 8) and 0xff,
+                    (ipInt shr 16) and 0xff,
+                    (ipInt shr 24) and 0xff
+                )
+                if (ip != "0.0.0.0" && !ip.startsWith("127.") && !ip.startsWith("169.254.")) {
+                    return ip
+                }
             }
-            if (linkAddress != null) return linkAddress.address.hostAddress
+        } catch (e: Exception) {
+            Log.w(TAG, "Error querying WifiManager connection info", e)
+        }
 
-            // Fallback: enumerate network interfaces
-            val interfaces = NetworkInterface.getNetworkInterfaces()
-            while (interfaces.hasMoreElements()) {
-                val networkInterface = interfaces.nextElement()
-                if (networkInterface.isLoopback || !networkInterface.isUp) continue
-                val addresses = networkInterface.inetAddresses
-                while (addresses.hasMoreElements()) {
-                    val address = addresses.nextElement()
-                    if (address is Inet4Address && !address.isLoopbackAddress) {
-                        return address.hostAddress
+        // 2. Query ConnectivityManager active networks for Wi-Fi
+        try {
+            if (connectivityManager != null) {
+                @Suppress("DEPRECATION")
+                val networks = connectivityManager.allNetworks
+                for (network in networks) {
+                    val caps = connectivityManager.getNetworkCapabilities(network)
+                    if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                        val lp = connectivityManager.getLinkProperties(network)
+                        val ip = extractIpv4(lp)
+                        if (ip != null) return ip
+                    }
+                }
+                val activeLp = connectivityManager.getLinkProperties(connectivityManager.activeNetwork)
+                val activeIp = extractIpv4(activeLp)
+                if (activeIp != null) return activeIp
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error querying ConnectivityManager", e)
+        }
+
+        // 3. Fallback: enumerate NetworkInterfaces, prioritizing wlan*
+        try {
+            val interfaces = NetworkInterface.getNetworkInterfaces()?.toList() ?: emptyList()
+
+            for (iface in interfaces) {
+                if (iface.name.startsWith("wlan", ignoreCase = true)) {
+                    for (addr in iface.inetAddresses) {
+                        if (addr is Inet4Address && !addr.isLoopbackAddress && !addr.isLinkLocalAddress) {
+                            return addr.hostAddress
+                        }
+                    }
+                }
+            }
+
+            for (iface in interfaces) {
+                if (iface.isLoopback) continue
+                for (addr in iface.inetAddresses) {
+                    if (addr is Inet4Address && !addr.isLoopbackAddress && !addr.isLinkLocalAddress) {
+                        return addr.hostAddress
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error obtaining local IP", e)
+            Log.e(TAG, "Error enumerating NetworkInterfaces", e)
         }
+
         return null
     }
 
@@ -84,21 +151,84 @@ class GpxWebServer(
         if (_isRunning.value) return
 
         try {
-            val ip = getLocalIpAddress() ?: "127.0.0.1"
-            val url = "http://$ip:$port"
-            _serverUrl.value = url
-
             // Generate cryptographically secure 4-digit PIN
             val pin = String.format(Locale.US, "%04d", SecureRandom().nextInt(10000))
             _currentPin.value = pin
             failedAttempts = 0
             lockoutUntil = 0L
 
+            // 1. Acquire partial WakeLock (15-min safety timeout)
+            try {
+                wakeLock = powerManager?.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "SimpleRoute:WebServerWakeLock"
+                )?.apply {
+                    setReferenceCounted(false)
+                    acquire(15 * 60 * 1000L)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed acquiring WakeLock for WebServer", e)
+            }
+
+            // 2. Acquire WifiLock to prevent Wear OS Wi-Fi sleep
+            try {
+                @Suppress("DEPRECATION")
+                wifiLock = wifiManager?.createWifiLock(
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                    "SimpleRoute:WifiLock"
+                )?.apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed acquiring WifiLock for WebServer", e)
+            }
+
+            // 3. Explicitly request Wi-Fi network on Wear OS
+            try {
+                val networkRequest = NetworkRequest.Builder()
+                    .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                    .build()
+
+                val callback = object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        super.onAvailable(network)
+                        Log.i(TAG, "Wear OS Wi-Fi network available: $network")
+                        val lp = connectivityManager?.getLinkProperties(network)
+                        val ip = extractIpv4(lp) ?: getLocalIpAddress()
+                        if (ip != null) {
+                            _serverUrl.value = "http://$ip:$port"
+                        }
+                    }
+
+                    override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
+                        super.onLinkPropertiesChanged(network, linkProperties)
+                        val ip = extractIpv4(linkProperties)
+                        if (ip != null) {
+                            _serverUrl.value = "http://$ip:$port"
+                        }
+                    }
+
+                    override fun onLost(network: Network) {
+                        super.onLost(network)
+                        Log.w(TAG, "Wear OS Wi-Fi network lost: $network")
+                    }
+                }
+                networkCallback = callback
+                connectivityManager?.requestNetwork(networkRequest, callback)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed requesting Wi-Fi network from ConnectivityManager", e)
+            }
+
+            val initialIp = getLocalIpAddress()
+            _serverUrl.value = if (initialIp != null) "http://$initialIp:$port" else "Connecting Wi-Fi..."
+
             engine = embeddedServer(CIO, port = port, host = "0.0.0.0") {
                 routing {
                     get("/") {
                         val routes = repository.getRouteFiles()
-                        val html = buildIndexHtml(routes.map { it.name }, url)
+                        val currentUrl = _serverUrl.value ?: "http://0.0.0.0:$port"
+                        val html = buildIndexHtml(routes.map { it.name }, currentUrl)
                         call.respondText(html, ContentType.Text.Html)
                     }
 
@@ -262,17 +392,56 @@ class GpxWebServer(
             }.start(wait = false)
 
             _isRunning.value = true
-            Log.i(TAG, "GPX Web Server started on $url with PIN $pin")
+            Log.i(TAG, "GPX Web Server started on port $port with PIN $pin")
+
+            // Coroutine to poll and resolve LAN IP as soon as Wi-Fi DHCP finishes
+            ipResolutionJob = CoroutineScope(Dispatchers.IO).launch {
+                var attempts = 0
+                while (isActive && attempts < 30) {
+                    val resolvedIp = getLocalIpAddress()
+                    if (resolvedIp != null && resolvedIp != "127.0.0.1") {
+                        _serverUrl.value = "http://$resolvedIp:$port"
+                        Log.i(TAG, "Resolved Wi-Fi LAN IP: $resolvedIp")
+                        break
+                    }
+                    delay(1000L)
+                    attempts++
+                }
+                if (isActive && (_serverUrl.value == null || _serverUrl.value!!.contains("Connecting"))) {
+                    val fallback = getLocalIpAddress() ?: "127.0.0.1"
+                    _serverUrl.value = "http://$fallback:$port"
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start GPX Web Server", e)
-            _isRunning.value = false
-            _serverUrl.value = null
-            _currentPin.value = null
+            stop()
         }
     }
 
     fun stop() {
         try {
+            ipResolutionJob?.cancel()
+            ipResolutionJob = null
+
+            networkCallback?.let { callback ->
+                try {
+                    connectivityManager?.unregisterNetworkCallback(callback)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error unregistering network callback", e)
+                }
+                networkCallback = null
+            }
+
+            wifiLock?.let {
+                if (it.isHeld) it.release()
+            }
+            wifiLock = null
+
+            wakeLock?.let {
+                if (it.isHeld) it.release()
+            }
+            wakeLock = null
+
             engine?.stop(1000, 2000)
             engine = null
             _isRunning.value = false

@@ -332,10 +332,19 @@ fun RouteListScreen(
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = serverUrl ?: "http://...:8080",
+                            text = serverUrl ?: "Connecting...",
                             color = Color.White,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
+                        )
+                    }
+                    if (serverUrl != null && serverUrl!!.contains("127.0.0.1")) {
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = "Connect watch to Wi-Fi in Settings",
+                            color = Color(0xFFFFB74D),
+                            fontSize = 9.sp,
+                            textAlign = TextAlign.Center
                         )
                     }
                     Spacer(modifier = Modifier.height(6.dp))
