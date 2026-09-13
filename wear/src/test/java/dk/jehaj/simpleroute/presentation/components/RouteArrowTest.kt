@@ -200,4 +200,84 @@ class RouteArrowTest {
         // Should not crash or infinite loop, and should produce arrows for valid segment
         assertTrue("Should process without errors and produce arrows", arrows.isNotEmpty())
     }
+
+    @Test
+    fun testArrowsContinueAlongCurvedRouteWithinViewport() {
+        // A route that curves: 150m North, then 150m East, total 300m+ inside 200px viewport
+        val baseLat = 56.0
+        val baseLon = 10.0
+        val points = mutableListOf<TrackPoint>()
+        // 0 to 150m North (10 points)
+        for (i in 0..10) {
+            points.add(
+                TrackPoint(
+                    lat = baseLat + i * (0.00135 / 10.0),
+                    lon = baseLon,
+                    distanceMeters = i * 15.0
+                )
+            )
+        }
+        // 150 to 350m East (10 points)
+        val northEndLat = baseLat + 0.00135
+        for (i in 1..10) {
+            points.add(
+                TrackPoint(
+                    lat = northEndLat,
+                    lon = baseLon + i * (0.0032 / 10.0),
+                    distanceMeters = 150.0 + i * 20.0
+                )
+            )
+        }
+
+        val arrows = calculateRouteArrows(
+            trackPoints = points,
+            currentTrackIndex = 0,
+            windowEnd = points.lastIndex,
+            cx = cx,
+            cy = cy,
+            minDistanceFromCenter = 20f,
+            maxDistanceFromCenter = 196f,
+            arrowIntervalMeters = 70.0,
+            maxLookaheadMeters = 900.0,
+            geoToScreen = { lat, lon -> geoToScreen(lat, lon, baseLat, baseLon) }
+        )
+
+        // Expected targets: 70m (North), 140m (North), 210m (East), 280m (East), 350m (East)
+        // All within 196px from center (cx, cy)
+        assertTrue("Should have arrows on both North and East segments", arrows.size >= 4)
+        assertTrue("Should have North-pointing arrow", arrows.any { it.direction.y < -0.8f })
+        assertTrue("Should have East-pointing arrow beyond 200m", arrows.any { it.direction.x > 0.8f })
+    }
+
+    @Test
+    fun testDefaultIntervalSpacesArrowsCleanly() {
+        val baseLat = 56.0
+        val baseLon = 10.0
+        val points = (0..15).map { i ->
+            TrackPoint(
+                lat = baseLat + i * 0.0002,
+                lon = baseLon,
+                distanceMeters = i * 22.2 // ~333m total
+            )
+        }
+
+        val arrows = calculateRouteArrows(
+            trackPoints = points,
+            currentTrackIndex = 0,
+            windowEnd = points.lastIndex,
+            cx = cx,
+            cy = cy,
+            minDistanceFromCenter = 20f,
+            maxDistanceFromCenter = 196f,
+            geoToScreen = { lat, lon -> geoToScreen(lat, lon, baseLat, baseLon) }
+        )
+
+        // Targets: 70m, 140m, 210m, 280m -> exactly 4 arrows across 300m view radius
+        assertEquals(4, arrows.size)
+        // Consecutive distance between screen positions should be spaced out (~47px apart)
+        for (i in 0 until arrows.size - 1) {
+            val distPx = hypot(arrows[i + 1].position.x - arrows[i].position.x, arrows[i + 1].position.y - arrows[i].position.y)
+            assertTrue("Arrows should be spaced ~47px apart", distPx in 40f..55f)
+        }
+    }
 }

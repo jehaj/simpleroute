@@ -33,7 +33,7 @@ fun BreadcrumbMapView(
 ) {
     // Window of trackpoints around current index for efficiency and clarity
     val windowStart = max(0, currentTrackIndex - 30)
-    val windowEnd = min(trackPoints.lastIndex, currentTrackIndex + 120)
+    val windowEnd = min(trackPoints.lastIndex, currentTrackIndex + 180)
 
     val visiblePoints = remember(trackPoints, currentTrackIndex) {
         if (trackPoints.isEmpty()) emptyList()
@@ -126,7 +126,8 @@ fun BreadcrumbMapView(
                         cy = cy,
                         minDistanceFromCenter = 20.dp.toPx(),
                         maxDistanceFromCenter = (size.width / 2f) * 0.98f,
-                        arrowIntervalMeters = 40.0,
+                        arrowIntervalMeters = 70.0,
+                        maxLookaheadMeters = 900.0,
                         geoToScreen = ::geoToScreen
                     )
                     drawRouteArrows(arrows, isAmbient)

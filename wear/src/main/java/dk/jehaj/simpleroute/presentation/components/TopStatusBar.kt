@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -19,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material3.Text
 import dk.jehaj.simpleroute.data.model.TurnCue
-import dk.jehaj.simpleroute.data.model.TurnType
+import java.util.Locale
 
 @Composable
 fun TopStatusBar(
@@ -76,6 +75,6 @@ fun TopStatusBar(
 private fun formatDistance(distanceMeters: Double): String {
     return when {
         distanceMeters < 1000 -> "${distanceMeters.toInt()} m"
-        else -> String.format("%.1f km", distanceMeters / 1000.0)
+        else -> String.format(Locale.US, "%.1f km", distanceMeters / 1000.0)
     }
 }

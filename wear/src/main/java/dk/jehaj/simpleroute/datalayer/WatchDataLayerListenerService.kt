@@ -1,6 +1,5 @@
 package dk.jehaj.simpleroute.datalayer
 
-import android.content.Intent
 import android.util.Log
 import android.widget.Toast
 import com.google.android.gms.tasks.Tasks

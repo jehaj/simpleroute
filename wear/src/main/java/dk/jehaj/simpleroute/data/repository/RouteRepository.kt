@@ -1,7 +1,9 @@
 package dk.jehaj.simpleroute.data.repository
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
+import androidx.core.content.edit
 import dk.jehaj.simpleroute.data.model.Route
 import dk.jehaj.simpleroute.data.parser.GpxParser
 import kotlinx.coroutines.Dispatchers
@@ -15,9 +17,10 @@ import java.io.FileOutputStream
 import java.io.InputStream
 
 class RouteRepository(
-    private val context: Context? = null,
+    context: Context? = null,
     baseDir: File? = null
 ) {
+    private val context: Context? = context?.applicationContext
 
     private val parser = GpxParser()
     private val _routeFilesFlow = MutableStateFlow<List<File>>(emptyList())
@@ -63,7 +66,7 @@ class RouteRepository(
             }
 
             if (!existing.isNullOrEmpty()) {
-                prefs.edit().putBoolean(KEY_INITIAL_ROUTES_SEEDED, true).apply()
+                prefs.edit { putBoolean(KEY_INITIAL_ROUTES_SEEDED, true) }
                 return
             }
 
@@ -79,7 +82,7 @@ class RouteRepository(
                     }
                 }
             }
-            prefs.edit().putBoolean(KEY_INITIAL_ROUTES_SEEDED, true).apply()
+            prefs.edit { putBoolean(KEY_INITIAL_ROUTES_SEEDED, true) }
         } catch (e: Exception) {
             Log.e(TAG, "Error ensuring initial routes", e)
         }
@@ -172,6 +175,7 @@ class RouteRepository(
         private const val KEY_INITIAL_ROUTES_SEEDED = "initial_routes_seeded"
 
         @Volatile
+        @SuppressLint("StaticFieldLeak")
         private var instance: RouteRepository? = null
 
         fun getInstance(context: Context): RouteRepository {

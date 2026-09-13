@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material3.Text
 import dk.jehaj.simpleroute.data.model.TrackPoint
 import kotlin.math.max
-import kotlin.math.min
 
 @Composable
 fun ElevationProfileView(
@@ -71,8 +70,8 @@ fun ElevationProfileView(
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (relevantPoints.size < 2) return@Canvas
 
-            var minEle = relevantPoints.minOf { it.ele }
-            var maxEle = relevantPoints.maxOf { it.ele }
+            val minEle = relevantPoints.minOf { it.ele }
+            val maxEle = relevantPoints.maxOf { it.ele }
 
             // Ensure a minimum elevation range of 20 meters so flat segments don't look like jagged peaks
             val eleRange = max(20.0, maxEle - minEle)

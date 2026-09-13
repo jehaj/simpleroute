@@ -41,7 +41,7 @@ import java.security.SecureRandom
 import java.util.Locale
 
 class GpxWebServer(
-    private val context: Context,
+    context: Context,
     private val port: Int = 8080
 ) {
     private val repository = RouteRepository.getInstance(context)

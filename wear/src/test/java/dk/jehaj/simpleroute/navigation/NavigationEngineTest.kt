@@ -7,7 +7,6 @@ import dk.jehaj.simpleroute.data.model.TurnType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NavigationEngineTest {
@@ -90,7 +89,7 @@ class NavigationEngineTest {
         assertNull("Should not alert at point 5", alert5)
 
         // At point 7 (dist ~77.7m): dist to cue is ~33.3m <= 45m trigger -> ALERT!
-        val (state7, alert7) = engine.processLocation(route.trackPoints[7].lat, route.trackPoints[7].lon, 4.5f, 0f)
+        val (_, alert7) = engine.processLocation(route.trackPoints[7].lat, route.trackPoints[7].lon, 4.5f, 0f)
         assertNotNull("Should alert at point 7", alert7)
         assertEquals(10, alert7!!.cue.offset)
         assertEquals(TurnType.TR, alert7.cue.turn)
@@ -101,7 +100,7 @@ class NavigationEngineTest {
         assertEquals(10, state8.lastAlertedCueOffset)
 
         // At point 10 (at turn junction): pass turn
-        val (state10, alert10) = engine.processLocation(route.trackPoints[10].lat, route.trackPoints[10].lon, 4.5f, 0f)
+        val (_, alert10) = engine.processLocation(route.trackPoints[10].lat, route.trackPoints[10].lon, 4.5f, 0f)
         assertNull("No alert at turn junction", alert10)
 
         // Advance to point 11: now next cue is cue 2 (offset 18)
@@ -109,7 +108,7 @@ class NavigationEngineTest {
         assertEquals(18, state11.nextCue?.offset)
 
         // Approach cue 2 at point 15 (offset 18 is dist 199.8m, pt 15 is 166.5m -> dist to cue 33.3m <= 45m) -> ALERT for cue 2!
-        val (state15, alert15) = engine.processLocation(route.trackPoints[15].lat, route.trackPoints[15].lon, 4.5f, 0f)
+        val (_, alert15) = engine.processLocation(route.trackPoints[15].lat, route.trackPoints[15].lon, 4.5f, 0f)
         assertNotNull("Should alert for cue 2", alert15)
         assertEquals(18, alert15!!.cue.offset)
         assertEquals(TurnType.TL, alert15.cue.turn)

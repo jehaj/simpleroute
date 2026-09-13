@@ -6,17 +6,14 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.location.Location
-import android.os.Build
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import androidx.core.app.ServiceCompat
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -60,7 +57,7 @@ class NavigationService : Service() {
         super.onCreate()
         locationClient = LocationServices.getFusedLocationProviderClient(this)
         hapticManager = HapticManager(this)
-        powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        powerManager = getSystemService(PowerManager::class.java)
 
         // Acquire partial wake-lock for background tracking pipeline (capped to max 6 hours for safety)
         partialWakeLock = powerManager.newWakeLock(
@@ -195,18 +192,16 @@ class NavigationService : Service() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "SimpleRoute Navigation",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Active turn-by-turn navigation guidance"
-                enableVibration(false)
-            }
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "SimpleRoute Navigation",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Active turn-by-turn navigation guidance"
+            enableVibration(false)
         }
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(channel)
     }
 
     private fun buildNotification(text: String): Notification {
@@ -248,16 +243,12 @@ class NavigationService : Service() {
 
     private fun startForegroundWithNotification(initialText: String) {
         val notification = buildNotification(initialText)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
     }
 
     private fun updateNotification(text: String) {
         val notification = buildNotification(text)
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, notification)
     }
 

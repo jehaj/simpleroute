@@ -2,12 +2,10 @@ package dk.jehaj.simpleroute.presentation
 
 import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.util.Log
-import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -25,7 +23,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import androidx.wear.ambient.AmbientLifecycleObserver
@@ -41,7 +38,6 @@ import dk.jehaj.simpleroute.webserver.GpxWebServer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
-import java.io.File
 import java.net.URLDecoder
 
 enum class Screen {
@@ -158,17 +154,10 @@ class MainActivity : ComponentActivity() {
     private fun wakeScreenFromAmbient() {
         runOnUiThread {
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                    setShowWhenLocked(true)
-                    setTurnScreenOn(true)
-                } else {
-                    window.addFlags(
-                        WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-                    )
-                }
+                setShowWhenLocked(true)
+                setTurnScreenOn(true)
 
-                val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                val powerManager = getSystemService(PowerManager::class.java)
                 val wakeLock = powerManager?.newWakeLock(
                     PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
                     "SimpleRoute:ScreenAlertWakeLock"

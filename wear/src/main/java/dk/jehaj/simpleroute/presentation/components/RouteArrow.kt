@@ -32,8 +32,8 @@ fun calculateRouteArrows(
     cy: Float,
     minDistanceFromCenter: Float,
     maxDistanceFromCenter: Float,
-    arrowIntervalMeters: Double = 40.0,
-    maxLookaheadMeters: Double = 320.0,
+    arrowIntervalMeters: Double = 70.0,
+    maxLookaheadMeters: Double = 900.0,
     geoToScreen: (lat: Double, lon: Double) -> Offset
 ): List<RouteArrow> {
     if (trackPoints.isEmpty() || currentTrackIndex >= windowEnd) return emptyList()

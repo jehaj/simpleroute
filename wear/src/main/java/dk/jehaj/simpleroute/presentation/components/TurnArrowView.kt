@@ -2,7 +2,6 @@ package dk.jehaj.simpleroute.presentation.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -145,12 +144,11 @@ private fun DrawScope.drawRoundabout(
     rotate(degrees = angle, pivot = Offset(cx, cy)) {
         val exitHead = Path().apply {
             val tipY = cy - radius * 1.5f
-            val tipX = cx
-            moveTo(tipX, cy - radius)
-            lineTo(tipX, tipY)
-            moveTo(tipX - 10f, tipY + 10f)
-            lineTo(tipX, tipY)
-            lineTo(tipX + 10f, tipY + 10f)
+            moveTo(cx, cy - radius)
+            lineTo(cx, tipY)
+            moveTo(cx - 10f, tipY + 10f)
+            lineTo(cx, tipY)
+            lineTo(cx + 10f, tipY + 10f)
         }
         drawPath(
             path = exitHead,
