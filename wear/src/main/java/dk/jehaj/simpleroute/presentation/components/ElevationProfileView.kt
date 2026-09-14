@@ -48,25 +48,16 @@ fun ElevationProfileView(
         }
     }
 
-    Box(modifier = modifier) {
-        // Top Vignette Gradient Overlay (Black fade tapering down to isolate from top views)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Black.copy(alpha = 0.90f),
-                            Color.Black.copy(alpha = 0.50f),
-                            Color.Transparent
-                        ),
-                        startY = 0f,
-                        endY = 45f
-                    )
-                )
+    Box(
+        modifier = modifier.background(
+            Brush.verticalGradient(
+                0.0f to Color.Transparent,
+                0.25f to Color.Black.copy(alpha = 0.85f),
+                0.40f to Color.Black,
+                1.0f to Color.Black
+            )
         )
-
+    ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (relevantPoints.size < 2) return@Canvas
 
@@ -75,8 +66,9 @@ fun ElevationProfileView(
 
             // Ensure a minimum elevation range of 20 meters so flat segments don't look like jagged peaks
             val eleRange = max(20.0, maxEle - minEle)
-            val paddingY = 8.dp.toPx()
-            val availableHeight = size.height - paddingY * 2
+            val paddingTop = 16.dp.toPx()
+            val paddingBottom = 30.dp.toPx()
+            val availableHeight = max(1f, size.height - paddingTop - paddingBottom)
 
             fun distanceToX(dist: Double): Float {
                 val fraction = ((dist - (currentDistanceMeters - windowBehind)) / totalWindow).toFloat()
@@ -85,18 +77,31 @@ fun ElevationProfileView(
 
             fun eleToY(ele: Double): Float {
                 val normalized = ((ele - minEle) / eleRange).toFloat()
-                return size.height - paddingY - (normalized * availableHeight)
+                return (size.height - paddingBottom - (normalized * availableHeight)).coerceIn(
+                    paddingTop,
+                    size.height - paddingBottom
+                )
             }
 
             val strokePath = Path()
             val fillPath = Path()
 
-            val firstX = distanceToX(relevantPoints.first().distanceMeters)
-            val firstY = eleToY(relevantPoints.first().ele)
+            val firstPt = relevantPoints.first()
+            val firstX = distanceToX(firstPt.distanceMeters)
+            val firstY = eleToY(firstPt.ele)
 
-            strokePath.moveTo(firstX, firstY)
-            fillPath.moveTo(firstX, size.height)
-            fillPath.lineTo(firstX, firstY)
+            // Ground horizontally to left edge when starting route (firstX > 0)
+            if (firstX > 0f) {
+                strokePath.moveTo(0f, firstY)
+                strokePath.lineTo(firstX, firstY)
+                fillPath.moveTo(0f, size.height)
+                fillPath.lineTo(0f, firstY)
+                fillPath.lineTo(firstX, firstY)
+            } else {
+                strokePath.moveTo(firstX, firstY)
+                fillPath.moveTo(firstX, size.height)
+                fillPath.lineTo(firstX, firstY)
+            }
 
             for (i in 1 until relevantPoints.size) {
                 val pt = relevantPoints[i]
@@ -106,8 +111,18 @@ fun ElevationProfileView(
                 fillPath.lineTo(x, y)
             }
 
-            val lastX = distanceToX(relevantPoints.last().distanceMeters)
-            fillPath.lineTo(lastX, size.height)
+            val lastPt = relevantPoints.last()
+            val lastX = distanceToX(lastPt.distanceMeters)
+            val lastY = eleToY(lastPt.ele)
+
+            // Ground horizontally to right edge when near end of route (lastX < size.width)
+            if (lastX < size.width) {
+                strokePath.lineTo(size.width, lastY)
+                fillPath.lineTo(size.width, lastY)
+                fillPath.lineTo(size.width, size.height)
+            } else {
+                fillPath.lineTo(lastX, size.height)
+            }
             fillPath.close()
 
             // 1. Draw gradient area fill (disabled in Ambient Mode for OLED power saving)
@@ -117,7 +132,7 @@ fun ElevationProfileView(
                         Color(0xFF00E5FF).copy(alpha = 0.35f),
                         Color(0xFF00E5FF).copy(alpha = 0.03f)
                     ),
-                    startY = paddingY,
+                    startY = paddingTop,
                     endY = size.height
                 )
                 drawPath(path = fillPath, brush = fillBrush)
@@ -137,24 +152,25 @@ fun ElevationProfileView(
 
             // 3. Rider position indicator: pinned at fixed 25% horizontal point
             val riderX = size.width * 0.25f
-            val riderY = eleToY(currentElevation)
+            val riderEle = if (currentElevation != 0.0) currentElevation else firstPt.ele
+            val riderY = eleToY(riderEle)
 
             if (!isAmbient) {
                 // Outer glow
                 drawCircle(
                     color = Color(0xFF00E5FF).copy(alpha = 0.35f),
-                    radius = 8.dp.toPx(),
+                    radius = 7.dp.toPx(),
                     center = Offset(riderX, riderY)
                 )
                 // Inner solid pin dot
                 drawCircle(
-                    color = Color(0xFFFFFFFF),
-                    radius = 4.dp.toPx(),
+                    color = Color.White,
+                    radius = 3.5.dp.toPx(),
                     center = Offset(riderX, riderY)
                 )
                 drawCircle(
                     color = Color(0xFF00E5FF),
-                    radius = 2.5.dp.toPx(),
+                    radius = 2.dp.toPx(),
                     center = Offset(riderX, riderY)
                 )
             } else {
@@ -167,15 +183,16 @@ fun ElevationProfileView(
             }
         }
 
-        // Elevation readout
+        // Elevation readout: centered at bottom where round display has maximum vertical depth
+        val displayEle = if (currentElevation != 0.0) currentElevation.toInt() else relevantPoints.firstOrNull()?.ele?.toInt() ?: 0
         Text(
-            text = "${currentElevation.toInt()} m",
-            color = if (isAmbient) Color.White else Color(0xFFB0BEC5),
+            text = "$displayEle m",
+            color = if (isAmbient) Color.White else Color(0xFF80DEEA),
             fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.SemiBold,
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 16.dp, bottom = 4.dp)
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 6.dp)
         )
     }
 }

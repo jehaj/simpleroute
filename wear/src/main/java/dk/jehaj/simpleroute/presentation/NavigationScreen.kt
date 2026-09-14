@@ -136,7 +136,7 @@ fun NavigationScreen(
                 isAmbient = isAmbient,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.30f)
+                    .fillMaxHeight(0.32f)
                     .align(Alignment.BottomCenter)
             )
         }

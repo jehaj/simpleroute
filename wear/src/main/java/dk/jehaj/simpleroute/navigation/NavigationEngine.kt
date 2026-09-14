@@ -112,7 +112,7 @@ class NavigationEngine(initialRoute: Route? = null) {
             currentTrackIndex = currentIndex,
             currentLatitude = lat,
             currentLongitude = lon,
-            currentElevation = if (elevation != 0.0) elevation else matchedPoint.ele,
+            currentElevation = if (matchedPoint.ele != 0.0) matchedPoint.ele else elevation,
             currentSpeedMps = speedMps,
             currentBearingDeg = bearingDeg,
             distanceRemainingMeters = distanceRemaining,

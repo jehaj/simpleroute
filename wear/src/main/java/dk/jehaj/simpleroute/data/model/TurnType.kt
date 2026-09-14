@@ -13,9 +13,11 @@ enum class TurnType(val code: String, val category: ManeuverCategory) {
     TL("TL", ManeuverCategory.LEFT),       // Turn Left
     TSLL("TSLL", ManeuverCategory.LEFT),   // Slight Left
     TSHL("TSHL", ManeuverCategory.LEFT),   // Sharp Left
+    KL("KL", ManeuverCategory.LEFT),       // Keep Left
     TR("TR", ManeuverCategory.RIGHT),      // Turn Right
     TSLR("TSLR", ManeuverCategory.RIGHT),  // Slight Right
     TSHR("TSHR", ManeuverCategory.RIGHT),  // Sharp Right
+    KR("KR", ManeuverCategory.RIGHT),      // Keep Right
     RNDB("RNDB", ManeuverCategory.ROUNDABOUT), // Roundabout
     TU("TU", ManeuverCategory.U_TURN),     // U-Turn
     C("C", ManeuverCategory.STRAIGHT),     // Straight / Continue
@@ -33,6 +35,7 @@ enum class TurnType(val code: String, val category: ManeuverCategory) {
      * - Turn Right: Two crisp, rapid tap pulses [0, 150, 100, 150]
      * - Roundabout: Distinct rolling 3-pulse cadence [0, 100, 80, 100, 80, 250]
      * - U-Turn: Rapid alarm flutter [0, 80, 50, 80, 50, 80]
+     * - Straight / Continue: Single crisp tap pulse [0, 120]
      */
     val hapticPattern: LongArray
         get() = when (category) {
@@ -40,7 +43,8 @@ enum class TurnType(val code: String, val category: ManeuverCategory) {
             ManeuverCategory.RIGHT -> longArrayOf(0, 150, 100, 150)
             ManeuverCategory.ROUNDABOUT -> longArrayOf(0, 100, 80, 100, 80, 250)
             ManeuverCategory.U_TURN -> longArrayOf(0, 80, 50, 80, 50, 80)
-            ManeuverCategory.STRAIGHT, ManeuverCategory.UNKNOWN -> longArrayOf()
+            ManeuverCategory.STRAIGHT -> longArrayOf(0, 120)
+            ManeuverCategory.UNKNOWN -> longArrayOf()
         }
 
     val defaultAngleDegrees: Float
@@ -48,9 +52,11 @@ enum class TurnType(val code: String, val category: ManeuverCategory) {
             TL -> -90f
             TSLL -> -45f
             TSHL -> -135f
+            KL -> -30f
             TR -> 90f
             TSLR -> 45f
             TSHR -> 135f
+            KR -> 30f
             TU -> 180f
             RNDB -> 0f
             C, UNKNOWN -> 0f

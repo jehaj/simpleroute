@@ -10,6 +10,12 @@ Standalone turn-by-turn navigation for Wear OS 3.0+ paired with an Android compa
 - **Elevation Horizon**: Docked 2D profile showing 500 m behind and 1,500 m ahead with a live rider marker.
 - **Power Conscious**: True black OLED background, 0.1 Hz ambient mode throttling, and automatic wake on upcoming turns.
 
+## Screenshots
+
+| Turn Arrow Mode | Breadcrumb Map Mode |
+| :---: | :---: |
+| ![Turn Arrow Mode](assets/Screenshot_20260914_131819_simpleroute.png) | ![Breadcrumb Map Mode](assets/Screenshot_20260914_131808_simpleroute.png) |
+
 ## Installation
 
 Connect your phone and watch via ADB or open the project in Android Studio.

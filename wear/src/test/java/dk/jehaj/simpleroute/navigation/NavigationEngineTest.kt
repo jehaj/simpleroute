@@ -7,6 +7,7 @@ import dk.jehaj.simpleroute.data.model.TurnType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NavigationEngineTest {
@@ -112,5 +113,42 @@ class NavigationEngineTest {
         assertNotNull("Should alert for cue 2", alert15)
         assertEquals(18, alert15!!.cue.offset)
         assertEquals(TurnType.TL, alert15.cue.turn)
+    }
+
+    @Test
+    fun testCurrentElevationPrefersGpxMatchedPointOverGpsAltitude() {
+        val route = createSyntheticRoute()
+        val engine = NavigationEngine(route)
+
+        // Point 5 has ele = 55.0
+        // Pass GPS elevation = 120.0 (simulating noisy/geoid-offset GPS altitude)
+        val (state, _) = engine.processLocation(
+            lat = route.trackPoints[5].lat,
+            lon = route.trackPoints[5].lon,
+            speedMps = 5f,
+            bearingDeg = 0f,
+            elevation = 120.0
+        )
+
+        // Must match the GPX elevation so rider marker stays pinned on route profile
+        assertEquals(55.0, state.currentElevation, 0.01)
+    }
+
+    @Test
+    fun testTurnTypesKlKrAndStraightHaptics() {
+        val kl = TurnType.fromCode("KL")
+        assertEquals(TurnType.KL, kl)
+        assertTrue(kl.isLeft)
+        assertEquals(-30f, kl.defaultAngleDegrees, 0.1f)
+        assertTrue(kl.hapticPattern.isNotEmpty())
+
+        val kr = TurnType.fromCode("KR")
+        assertEquals(TurnType.KR, kr)
+        assertTrue(kr.isRight)
+        assertEquals(30f, kr.defaultAngleDegrees, 0.1f)
+        assertTrue(kr.hapticPattern.isNotEmpty())
+
+        val straight = TurnType.C
+        assertTrue("Straight cue should have a tactile haptic pattern", straight.hapticPattern.isNotEmpty())
     }
 }
