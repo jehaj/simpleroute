@@ -1,7 +1,6 @@
 package dk.jehaj.simpleroute.presentation
 
 import android.Manifest
-import android.content.Context
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager

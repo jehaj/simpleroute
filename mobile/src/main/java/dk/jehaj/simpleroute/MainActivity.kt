@@ -228,7 +228,7 @@ fun PhoneAppScreen(
                     }
 
                     // Allow watch time to read bytes before sender closes
-                    kotlinx.coroutines.delay(1000L)
+                    kotlinx.coroutines.delay(1000L.milliseconds)
                     try {
                         Tasks.await(channelClient.close(channel))
                     } catch (e: Exception) {

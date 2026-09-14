@@ -38,6 +38,7 @@ import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.security.SecureRandom
 import java.util.Locale
+import kotlin.time.Duration.Companion.milliseconds
 
 class GpxWebServer(
     context: Context,
@@ -403,7 +404,7 @@ class GpxWebServer(
                         Log.i(TAG, "Resolved Wi-Fi LAN IP: $resolvedIp")
                         break
                     }
-                    delay(1000L)
+                    delay(1000L.milliseconds)
                     attempts++
                 }
                 if (isActive && (_serverUrl.value == null || _serverUrl.value!!.contains("Connecting"))) {

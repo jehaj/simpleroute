@@ -101,7 +101,7 @@ class GpxParser {
                 val remaining = MAX_TEXT_LENGTH - textBuffer.length
                 if (remaining > 0) {
                     val toAppend = kotlin.math.min(length, remaining)
-                    textBuffer.append(ch, start, toAppend)
+                    textBuffer.appendRange(ch, start, start + toAppend)
                 }
             }
         }
