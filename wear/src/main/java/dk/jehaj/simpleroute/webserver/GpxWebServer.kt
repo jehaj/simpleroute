@@ -14,9 +14,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.PartData
 import io.ktor.http.content.forEachPart
-import io.ktor.server.application.call
 import io.ktor.server.cio.CIO
-import io.ktor.server.engine.ApplicationEngine
+import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.request.receiveMultipart
 import io.ktor.server.request.receiveParameters
@@ -24,7 +23,7 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
-import io.ktor.util.asStream
+import io.ktor.utils.io.jvm.javaio.toInputStream
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -45,7 +44,7 @@ class GpxWebServer(
     private val port: Int = 8080
 ) {
     private val repository = RouteRepository.getInstance(context)
-    private var engine: ApplicationEngine? = null
+    private var engine: EmbeddedServer<*, *>? = null
 
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
     private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
@@ -261,7 +260,7 @@ class GpxWebServer(
                                         val output = ByteArrayOutputStream()
                                         val buffer = ByteArray(8192)
                                         var totalBytes = 0L
-                                        part.provider().asStream().use { stream ->
+                                        part.provider().toInputStream().use { stream ->
                                             var bytesRead: Int
                                             while (stream.read(buffer).also { bytesRead = it } != -1) {
                                                 totalBytes += bytesRead
@@ -278,7 +277,7 @@ class GpxWebServer(
                                     }
                                     else -> {}
                                 }
-                                part.dispose()
+                                part.release()
                             }
 
                             if (payloadTooLarge) {
@@ -308,7 +307,7 @@ class GpxWebServer(
                             failedAttempts = 0
 
                             if (uploadedBytes != null && uploadedFileName.isNotEmpty()) {
-                                repository.saveRoute(uploadedFileName, uploadedBytes!!)
+                                repository.saveRoute(uploadedFileName, uploadedBytes)
                                 val successHtml = buildSuccessHtml(uploadedFileName)
                                 call.respondText(successHtml, ContentType.Text.Html)
                             } else {

@@ -1,5 +1,6 @@
 package dk.jehaj.simpleroute.haptics
 
+import android.Manifest
 import android.content.Context
 import android.media.AudioAttributes
 import android.os.Build
@@ -8,6 +9,8 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
+import androidx.annotation.RequiresApi
+import androidx.annotation.RequiresPermission
 import dk.jehaj.simpleroute.data.model.TurnType
 
 class HapticManager(private val context: Context) {
@@ -30,6 +33,7 @@ class HapticManager(private val context: Context) {
      * - U-Turn: Rapid alarm flutter [0, 80, 50, 80, 50, 80]
      * - Straight / Continue: Single crisp tap [0, 120]
      */
+    @RequiresPermission(Manifest.permission.VIBRATE)
     fun vibrateForTurn(turnType: TurnType) {
         val pattern = turnType.hapticPattern
         if (pattern.isEmpty()) {
@@ -40,6 +44,7 @@ class HapticManager(private val context: Context) {
         vibratePattern(pattern)
     }
 
+    @RequiresPermission(Manifest.permission.VIBRATE)
     fun vibratePattern(timings: LongArray) {
         val vib = vibrator ?: run {
             Log.w(TAG, "Vibrator not available")
@@ -60,20 +65,13 @@ class HapticManager(private val context: Context) {
             val effect = VibrationEffect.createWaveform(timings, amplitudes, -1)
 
             // Wear OS 3.0+ / Android 11+ requires ALARM or NAVIGATION attributes for background/service vibration.
-            // Without explicit attributes, Android classifies vibrations as USAGE_UNKNOWN and drops them when
-            // running from NavigationService or when in ambient mode.
+            // Without explicit USAGE_ALARM attributes, Android classifies vibrations as USAGE_UNKNOWN / USAGE_TOUCH
+            // and suppresses them when running from NavigationService, in ambient mode, or with the screen off.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                val vibrationAttributes = VibrationAttributes.Builder()
-                    .setUsage(VibrationAttributes.USAGE_ALARM)
-                    .build()
-                vib.vibrate(effect, vibrationAttributes)
+                vib.vibrate(effect, Api33Impl.ALARM_VIBRATION_ATTRIBUTES)
             } else {
                 @Suppress("DEPRECATION")
-                val audioAttributes = AudioAttributes.Builder()
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .build()
-                vib.vibrate(effect, audioAttributes)
+                vib.vibrate(effect, ALARM_AUDIO_ATTRIBUTES)
             }
             Log.i(TAG, "Triggered vibration pattern: ${timings.contentToString()}")
         } catch (e: Exception) {
@@ -81,6 +79,7 @@ class HapticManager(private val context: Context) {
         }
     }
 
+    @RequiresPermission(Manifest.permission.VIBRATE)
     fun cancel() {
         try {
             vibrator?.cancel()
@@ -89,7 +88,24 @@ class HapticManager(private val context: Context) {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private object Api33Impl {
+        val ALARM_VIBRATION_ATTRIBUTES: VibrationAttributes =
+            VibrationAttributes.createForUsage(VibrationAttributes.USAGE_ALARM)
+    }
+
     companion object {
         private const val TAG = "HapticManager"
+
+        /**
+         * Reusable attributes for API 30-32 background vibration.
+         */
+        @Suppress("DEPRECATION")
+        private val ALARM_AUDIO_ATTRIBUTES: AudioAttributes by lazy {
+            AudioAttributes.Builder()
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .build()
+        }
     }
 }
