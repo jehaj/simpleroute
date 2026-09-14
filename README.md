@@ -2,6 +2,14 @@
 
 Standalone turn-by-turn navigation for Wear OS 3.0+ paired with an Android companion app, optimized for BRouter GPX cycling routes.
 
+## Motivation
+
+I built SimpleRoute because the Galaxy Watch4 and older models do not support following a route during a cycling workout in Samsung Health. That feature is only available on newer or higher-end models, like the Watch5 Pro and Watch Ultra. If your watch already supports routes in Samsung Health, you should probably just use that instead.
+
+I could not find an existing Wear OS app that worked well enough for me, so I decided to create my own. It is made for me, by me and Antigravity, though Antigravity wrote most, if not all, of the code.
+
+The watch app runs as a foreground service, so hopefully you can also run basic cycling tracking in Samsung Health at the same time to log your ride.
+
 ## Features
 
 - **Directional Haptics**: Distinct vibration patterns for left turns, right turns, roundabouts, and U-turns.
@@ -14,7 +22,7 @@ Standalone turn-by-turn navigation for Wear OS 3.0+ paired with an Android compa
 
 | Turn Arrow Mode | Breadcrumb Map Mode |
 | :---: | :---: |
-| ![Turn Arrow Mode](assets/Screenshot_20260914_131819_simpleroute.png) | ![Breadcrumb Map Mode](assets/Screenshot_20260914_131808_simpleroute.png) |
+| ![Turn Arrow Mode](assets/Screenshot_20260914_162710_simpleroute.png) | ![Breadcrumb Map Mode](assets/Screenshot_20260914_160737_simpleroute.png) |
 
 ## Installation
 
