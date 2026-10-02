@@ -23,8 +23,10 @@ SimpleRoute is a standalone turn-by-turn cycling navigation app for Samsung Gala
   - Sample test route: [`Brendstrup - Aarhus.gpx`](file:///home/nikolaj/Projekter/SimpleRoute/Brendstrup%20-%20Aarhus.gpx)
 
 ### 2. Core Build & Test Commands
-- **Build Watch App**: `./gradlew :wear:assembleDebug`
-- **Install Watch App**: `./gradlew :wear:installDebug`
+- **Build Watch App (Debug)**: `./gradlew :wear:assembleDebug`
+- **Build Watch App (Optimized Release)**: `./gradlew :wear:assembleRelease`
+- **Install Watch App (Optimized Release)**: `./gradlew :wear:installRelease`
+- **Install Watch App (Debug)**: `./gradlew :wear:installDebug`
 - **Build Mobile App**: `./gradlew :mobile:assembleDebug`
 - **Install Mobile App**: `./gradlew :mobile:installDebug`
 - **Run Unit Tests**: `./gradlew test` (or `./gradlew :wear:test`, `./gradlew :mobile:test`)

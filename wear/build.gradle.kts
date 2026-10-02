@@ -21,8 +21,9 @@ android {
     buildTypes {
         release {
             optimization {
-                enable = false
+                enable = true
             }
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -53,7 +54,6 @@ dependencies {
     implementation(libs.androidx.wear)
     implementation(libs.androidx.wear.tooling.preview)
     implementation(libs.compose.material3)
-    implementation(libs.compose.ui.tooling)
     implementation(libs.play.services.wearable)
     implementation(libs.play.services.location)
     implementation(libs.ktor.server.core)
@@ -63,4 +63,5 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.tooling)
 }

@@ -26,16 +26,55 @@ The watch app runs as a foreground service, so hopefully you can also run basic 
 
 ## Installation
 
-Connect your phone and watch via ADB or open the project in Android Studio.
+### Wireless Debugging Setup (Galaxy Watch4 / Wear OS)
 
-1. Install the phone app:
-   ```bash
-   ./gradlew :mobile:installDebug
-   ```
-2. Install the watch app:
-   ```bash
-   ./gradlew :wear:installDebug
-   ```
+You can install both debug and optimized release builds directly onto your watch over Wi-Fi without any cables:
+
+1. **Connect Watch & Computer to the same Wi-Fi network**.
+2. **Enable Developer Options on Watch**:
+   - Go to **Settings > About watch > Software info**.
+   - Tap **Software version** 7 times until you see the "Developer mode turned on" prompt.
+3. **Enable Wireless Debugging**:
+   - Go to **Settings > Developer options**.
+   - Enable **ADB debugging**.
+   - Enable **Wireless debugging** (always allow on this Wi-Fi network if prompted).
+4. **Pair and Connect with ADB**:
+   - *Wear OS 4+ / 5+ (One UI Watch 5+)*:
+     - Tap **Pair new device** on the watch. Note the IP address, pairing port, and 6-digit Wi-Fi pairing code.
+     - Pair your PC terminal:
+       ```bash
+       adb pair <watch_ip>:<pairing_port>
+       # Enter the 6-digit pairing code when prompted
+       ```
+     - Return to the **Wireless debugging** screen on the watch and check the connection port under **IP address & Port**:
+       ```bash
+       adb connect <watch_ip>:<connection_port>
+       ```
+   - *Wear OS 3.x*:
+     - With ADB debugging and ADB over Wi-Fi enabled:
+       ```bash
+       adb connect <watch_ip>:5555
+       ```
+   - Confirm connection with `adb devices` (status should show `device`).
+
+### Deploying the Apps
+
+#### Watch App (`:wear`)
+- **Optimized "Production" Build (~6–9 MB)** *(Recommended)*:
+  R8 code shrinking and dead-code elimination are enabled, and the APK is signed with your local debug key for instant wireless deployment:
+  ```bash
+  ./gradlew :wear:installRelease
+  ```
+- **Debug Build (~44 MB)** *(Includes preview tooling & uncompressed DEX for incremental development)*:
+  ```bash
+  ./gradlew :wear:installDebug
+  ```
+
+#### Phone App (`:mobile`)
+Connect your phone via USB or Wireless Debugging:
+```bash
+./gradlew :mobile:installDebug
+```
 
 ## Usage
 
