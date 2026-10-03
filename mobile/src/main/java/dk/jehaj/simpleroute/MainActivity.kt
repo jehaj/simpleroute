@@ -14,6 +14,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -47,9 +48,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.Node
 import com.google.android.gms.wearable.Wearable
+import dk.jehaj.simpleroute.data.model.Route
+import dk.jehaj.simpleroute.data.parser.GpxParser
+import dk.jehaj.simpleroute.presentation.components.FullElevationProfileView
+import dk.jehaj.simpleroute.presentation.components.RouteOverviewMap
 import dk.jehaj.simpleroute.ui.theme.SimpleRouteTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -57,6 +66,7 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 import java.net.URLEncoder
+import java.util.Locale
 
 data class SelectedGpx(
     val uri: Uri,
@@ -246,15 +256,46 @@ fun PhoneAppScreen(
         }
     }
 
+    var parsedRoute by remember { mutableStateOf<Route?>(null) }
+    var isParsingRoute by remember { mutableStateOf(false) }
+    var parseError by remember { mutableStateOf<String?>(null) }
+
+    // Parse GPX when selectedFile changes
+    LaunchedEffect(selectedFile) {
+        val file = selectedFile
+        if (file == null) {
+            parsedRoute = null
+            parseError = null
+            return@LaunchedEffect
+        }
+        isParsingRoute = true
+        parseError = null
+        try {
+            val route = withContext(Dispatchers.IO) {
+                context.contentResolver.openInputStream(file.uri)?.use { stream ->
+                    GpxParser().parse(stream, file.fileName)
+                } ?: throw IllegalStateException("Cannot open GPX file")
+            }
+            parsedRoute = route
+        } catch (e: Exception) {
+            Log.e("PhoneAppScreen", "Failed parsing GPX", e)
+            parseError = "Failed to parse GPX: ${e.message}"
+            parsedRoute = null
+        } finally {
+            isParsingRoute = false
+        }
+    }
+
     Surface(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Top
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             Text(
                 text = "SimpleRoute Companion",
@@ -264,10 +305,10 @@ fun PhoneAppScreen(
             )
 
             Text(
-                text = "Send BRouter GPX routes directly to your watch",
+                text = "Preview and send BRouter GPX routes to your watch",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, bottom = 24.dp)
+                modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
             )
 
             // Connected Watch Card
@@ -313,62 +354,262 @@ fun PhoneAppScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // File selection card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+            if (selectedFile == null) {
+                // Empty state card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
-                    if (selectedFile != null) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         Text(
-                            text = "Selected Route",
-                            fontSize = 12.sp,
+                            text = "No GPX route selected",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = {
+                                filePickerLauncher.launch(arrayOf("*/*", "application/gpx+xml"))
+                            }
+                        ) {
+                            Text("Select GPX File")
+                        }
+                    }
+                }
+            } else if (isParsingRoute) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text("Parsing route overview...")
+                    }
+                }
+            } else if (parseError != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = parseError!!,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = { filePickerLauncher.launch(arrayOf("*/*", "application/gpx+xml")) }
+                        ) {
+                            Text("Choose Another File")
+                        }
+                    }
+                }
+            } else if (parsedRoute != null) {
+                val route = parsedRoute!!
+
+                // Route Overview Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Route Overview",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = route.name,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Metric chips row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("Distance", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = String.format(Locale.US, "%.1f km", route.totalDistanceMeters / 1000.0),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                            }
+                            Column {
+                                Text("Ascent", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = "↗ +${route.totalAscentMeters.toInt()}m",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF2E7D32),
+                                    fontSize = 16.sp
+                                )
+                            }
+                            Column {
+                                Text("Descent", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = "↘ -${route.totalDescentMeters.toInt()}m",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFC62828),
+                                    fontSize = 16.sp
+                                )
+                            }
+                            Column {
+                                Text("Waypoints", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = "${route.waypoints.size}",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFF57F17),
+                                    fontSize = 16.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Vector Route Overview Canvas
+                        Text(
+                            text = "MAP PREVIEW",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = selectedFile!!.fileName,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            textAlign = TextAlign.Center
-                        )
-                        if (selectedFile!!.sizeBytes > 0) {
-                            Text(
-                                text = "${selectedFile!!.sizeBytes / 1024} KB",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(260.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF0F172A))
+                        ) {
+                            RouteOverviewMap(
+                                trackPoints = route.trackPoints,
+                                waypoints = route.waypoints,
+                                padding = 24.dp
                             )
                         }
-                    } else {
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Elevation Profile
                         Text(
-                            text = "No GPX file selected",
+                            text = "ELEVATION HORIZON",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Button(
-                        onClick = {
-                            filePickerLauncher.launch(arrayOf("*/*", "application/gpx+xml"))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(85.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.Black)
+                        ) {
+                            FullElevationProfileView(
+                                trackPoints = route.trackPoints,
+                                totalDistanceMeters = route.totalDistanceMeters,
+                                minElevation = route.minElevation,
+                                maxElevation = route.maxElevation
+                            )
                         }
-                    ) {
-                        Text(if (selectedFile == null) "Select GPX File" else "Change GPX File")
+
+                        // Waypoints list if available
+                        if (route.waypoints.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "WAYPOINTS (${route.waypoints.size})",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                route.waypoints.forEach { wp ->
+                                    val badgeColor = when {
+                                        wp.isStart -> Color(0xFF00E676)
+                                        wp.isEnd -> Color(0xFFFF1744)
+                                        else -> Color(0xFFFFB300)
+                                    }
+                                    val label = when {
+                                        wp.isStart -> "Start"
+                                        wp.isEnd -> "Finish"
+                                        else -> "Stop"
+                                    }
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(
+                                                color = MaterialTheme.colorScheme.surface,
+                                                shape = RoundedCornerShape(6.dp)
+                                            )
+                                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .background(badgeColor, shape = RoundedCornerShape(4.dp))
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = wp.name.ifEmpty { label },
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            text = label,
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            // Action button
-            if (selectedFile != null) {
+                // Actions
                 Button(
                     onClick = { sendGpxToWatch(selectedFile!!) },
                     enabled = connectedNodes.isNotEmpty() && !isTransferring,
@@ -393,6 +634,17 @@ fun PhoneAppScreen(
                         )
                     }
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        filePickerLauncher.launch(arrayOf("*/*", "application/gpx+xml"))
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Change GPX File")
+                }
             }
 
             // Transfer Status
@@ -412,6 +664,8 @@ fun PhoneAppScreen(
                     }
                 )
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }

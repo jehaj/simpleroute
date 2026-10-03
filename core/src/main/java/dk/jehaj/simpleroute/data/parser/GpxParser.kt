@@ -4,6 +4,7 @@ import dk.jehaj.simpleroute.data.model.Route
 import dk.jehaj.simpleroute.data.model.TrackPoint
 import dk.jehaj.simpleroute.data.model.TurnCue
 import dk.jehaj.simpleroute.data.model.TurnType
+import dk.jehaj.simpleroute.data.model.WayPoint
 import org.xml.sax.Attributes
 import org.xml.sax.helpers.DefaultHandler
 import java.io.InputStream
@@ -43,6 +44,7 @@ class GpxParser {
 
         private val rawTrackPoints = mutableListOf<RawTrackPoint>()
         private val rawTurnCues = mutableListOf<RawTurnCue>()
+        private val rawWayPoints = mutableListOf<WayPoint>()
 
         private val textBuffer = StringBuilder()
 
@@ -63,6 +65,13 @@ class GpxParser {
         private var currentTrkptLon: Double? = null
         private var currentEle: Double = 0.0
 
+        private var currentWptLat: Double? = null
+        private var currentWptLon: Double? = null
+        private var currentWptName: String? = null
+        private var currentWptType: String? = null
+        private var currentWptDesc: String? = null
+        private var currentWptEle: Double = 0.0
+
         override fun startElement(
             uri: String?,
             localName: String?,
@@ -74,7 +83,15 @@ class GpxParser {
 
             when (tag) {
                 "trk" -> insideTrk = true
-                "wpt" -> insideWpt = true
+                "wpt" -> {
+                    insideWpt = true
+                    currentWptLat = attributes?.getValue("lat")?.toDoubleOrNull()
+                    currentWptLon = attributes?.getValue("lon")?.toDoubleOrNull()
+                    currentWptName = null
+                    currentWptType = null
+                    currentWptDesc = null
+                    currentWptEle = 0.0
+                }
                 "rtept" -> {
                     insideRtept = true
                     currentRteptLat = attributes?.getValue("lat")?.toDoubleOrNull()
@@ -112,9 +129,25 @@ class GpxParser {
 
             when (tag) {
                 "trk" -> insideTrk = false
-                "wpt" -> insideWpt = false
+                "wpt" -> {
+                    insideWpt = false
+                    if (currentWptLat != null && currentWptLon != null) {
+                        rawWayPoints.add(
+                            WayPoint(
+                                name = currentWptName ?: "",
+                                lat = currentWptLat!!,
+                                lon = currentWptLon!!,
+                                type = currentWptType,
+                                ele = currentWptEle,
+                                desc = currentWptDesc
+                            )
+                        )
+                    }
+                }
                 "name" -> {
-                    if (insideTrk && text.isNotEmpty()) {
+                    if (insideWpt) {
+                        currentWptName = text
+                    } else if (insideTrk && text.isNotEmpty()) {
                         routeName = text
                     } else if (!insideRtept && !insideTrkpt && !insideWpt && routeName == fileName.removeSuffix(".gpx")) {
                         if (text.isNotEmpty()) {
@@ -122,9 +155,16 @@ class GpxParser {
                         }
                     }
                 }
+                "type" -> {
+                    if (insideWpt) {
+                        currentWptType = text
+                    }
+                }
                 "desc" -> {
                     if (insideRtept) {
                         currentDesc = text
+                    } else if (insideWpt) {
+                        currentWptDesc = text
                     }
                 }
                 "turn" -> {
@@ -145,6 +185,8 @@ class GpxParser {
                 "ele" -> {
                     if (insideTrkpt) {
                         currentEle = text.toDoubleOrNull() ?: 0.0
+                    } else if (insideWpt) {
+                        currentWptEle = text.toDoubleOrNull() ?: 0.0
                     }
                 }
                 "rtept" -> {
@@ -243,6 +285,7 @@ class GpxParser {
                 fileName = fileName,
                 trackPoints = processedTrackPoints,
                 turnCues = processedTurnCues,
+                waypoints = rawWayPoints,
                 totalDistanceMeters = cumulativeDistance,
                 totalAscentMeters = totalAscent,
                 totalDescentMeters = totalDescent,
