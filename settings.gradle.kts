@@ -23,5 +23,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "SimpleRoute"
+include(":core")
 include(":mobile")
 include(":wear")
