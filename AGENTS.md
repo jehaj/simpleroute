@@ -27,8 +27,10 @@ SimpleRoute is a standalone turn-by-turn cycling navigation app for Samsung Gala
 - **Build Watch App (Optimized Release)**: `./gradlew :wear:assembleRelease`
 - **Install Watch App (Optimized Release)**: `./gradlew :wear:installRelease`
 - **Install Watch App (Debug)**: `./gradlew :wear:installDebug`
-- **Build Mobile App**: `./gradlew :mobile:assembleDebug`
-- **Install Mobile App**: `./gradlew :mobile:installDebug`
+- **Build Mobile App (Debug)**: `./gradlew :mobile:assembleDebug`
+- **Build Mobile App (Optimized Release)**: `./gradlew :mobile:assembleRelease`
+- **Install Mobile App (Optimized Release)**: `./gradlew :mobile:installRelease`
+- **Install Mobile App (Debug)**: `./gradlew :mobile:installDebug`
 - **Run Unit Tests**: `./gradlew test` (or `./gradlew :wear:test`, `./gradlew :mobile:test`)
 
 ### 3. Project-Specific Pillars (Extending §5)

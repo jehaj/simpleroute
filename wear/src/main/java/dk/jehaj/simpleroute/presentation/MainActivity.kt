@@ -41,6 +41,7 @@ import java.net.URLDecoder
 
 enum class Screen {
     ROUTE_LIST,
+    ROUTE_OVERVIEW,
     NAVIGATION
 }
 
@@ -198,6 +199,7 @@ fun MainAppContent(
     val isAmbient by isAmbientFlow.collectAsState()
     val navState by NavigationStateHolder.navigationState.collectAsState()
     var currentScreen by remember { mutableStateOf(Screen.ROUTE_LIST) }
+    var selectedRoute by remember { mutableStateOf<dk.jehaj.simpleroute.data.model.Route?>(null) }
     val coroutineScope = rememberCoroutineScope()
 
     // Permissions check
@@ -218,7 +220,7 @@ fun MainAppContent(
 
     // Auto-navigate to navigation screen if navigation is active, or back to route list when stopped
     LaunchedEffect(navState.isNavigating) {
-        if (navState.isNavigating && currentScreen == Screen.ROUTE_LIST) {
+        if (navState.isNavigating && currentScreen != Screen.NAVIGATION) {
             currentScreen = Screen.NAVIGATION
         } else if (!navState.isNavigating && currentScreen == Screen.NAVIGATION) {
             currentScreen = Screen.ROUTE_LIST
@@ -242,11 +244,30 @@ fun MainAppContent(
                 onSelectRoute = { file ->
                     coroutineScope.launch {
                         val route = repository.loadRoute(file)
-                        NavigationStateHolder.startNavigation(context, route)
-                        currentScreen = Screen.NAVIGATION
+                        selectedRoute = route
+                        currentScreen = Screen.ROUTE_OVERVIEW
                     }
                 }
             )
+        }
+        Screen.ROUTE_OVERVIEW -> {
+            val route = selectedRoute
+            if (route != null) {
+                RouteOverviewScreen(
+                    route = route,
+                    isAmbient = isAmbient,
+                    onStartNavigation = {
+                        NavigationStateHolder.startNavigation(context, route)
+                        currentScreen = Screen.NAVIGATION
+                    },
+                    onBack = {
+                        selectedRoute = null
+                        currentScreen = Screen.ROUTE_LIST
+                    }
+                )
+            } else {
+                currentScreen = Screen.ROUTE_LIST
+            }
         }
         Screen.NAVIGATION -> {
             NavigationScreen(

@@ -33,6 +33,12 @@ class GpxParserTest {
 
         assertTrue("Trackpoints should be > 500", route.trackPoints.size > 500)
         assertTrue("Turn cues should be > 10", route.turnCues.size > 10)
+        assertEquals(4, route.waypoints.size)
+        assertEquals("from", route.waypoints[0].name)
+        assertTrue(route.waypoints[0].isStart)
+        assertEquals("via A", route.waypoints[1].name)
+        assertEquals("to", route.waypoints[3].name)
+        assertTrue(route.waypoints[3].isEnd)
 
         // The GPX comment says track-length = 29406 m
         assertTrue("Total distance should be around 29.4 km", route.totalDistanceMeters in 28000.0..31000.0)

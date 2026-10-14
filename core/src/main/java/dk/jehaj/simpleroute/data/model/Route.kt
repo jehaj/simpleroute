@@ -5,6 +5,7 @@ data class Route(
     val fileName: String,
     val trackPoints: List<TrackPoint>,
     val turnCues: List<TurnCue>,
+    val waypoints: List<WayPoint> = emptyList(),
     val totalDistanceMeters: Double = 0.0,
     val totalAscentMeters: Double = 0.0,
     val totalDescentMeters: Double = 0.0,
@@ -13,4 +14,5 @@ data class Route(
 ) {
     val pointCount: Int get() = trackPoints.size
     val cueCount: Int get() = turnCues.size
+    val waypointCount: Int get() = waypoints.size
 }

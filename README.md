@@ -72,9 +72,15 @@ You can install both debug and optimized release builds directly onto your watch
 
 #### Phone App (`:mobile`)
 Connect your phone via USB or Wireless Debugging:
-```bash
-./gradlew :mobile:installDebug
-```
+- **Optimized "Production" Build** *(Recommended)*:
+  R8 code shrinking and dead-code elimination are enabled, and the APK is signed with your local debug key:
+  ```bash
+  ./gradlew :mobile:installRelease
+  ```
+- **Debug Build**:
+  ```bash
+  ./gradlew :mobile:installDebug
+  ```
 
 ## Usage
 

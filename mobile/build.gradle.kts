@@ -22,8 +22,9 @@ android {
     buildTypes {
         release {
             optimization {
-                enable = false
+                enable = true
             }
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -36,6 +37,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":core"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
